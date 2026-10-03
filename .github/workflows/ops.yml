@@ -1,0 +1,474 @@
+name: ops
+
+# Self-dispatching phase runner.
+#
+#   select-phase  picks the lowest workspace/phase-NN without .done or .blocked,
+#                 reading markers through the GitHub API with no checkout so an
+#                 idle tick costs only VM boot.
+#   run-phase     installs Flutter and opencode, runs scripts/phase_runner.sh,
+#                 and pushes the verified result straight to main.
+#   review        a separate job with its own budget, so a slow phase can never
+#                 starve it. Pushes its corrections straight to main too.
+#   retrigger     POSTs repository_dispatch back to this workflow ~10s after
+#                 each run, chaining the loop without waiting for cron.
+#
+# Why direct push rather than pull requests
+# ----------------------------------------
+# A pull request authored by GITHUB_TOKEN never receives CI. GitHub suppresses
+# the `pull_request` event for changes made with the Actions token, as a
+# recursion guard, so no check-run ever attaches to the PR and
+# `statusCheckRollup` stays empty. Verified empirically on this repo: build.yml
+# dispatched directly at the PR head went fully green on the exact head SHA
+# (analyze + test, android, windows all success) and the PR still reported
+# BLOCKED with an empty rollup. Any required status check is therefore
+# permanently unsatisfiable, and `gh pr merge` cannot merge.
+#
+# That removes the entire point of a PR, which is the CI gate, so the machinery
+# was pure liability. The gate here is the in-pipeline verification instead:
+# `flutter analyze` and `flutter test` run before `.done` is written, and again
+# after the reviewer's fixes. That is the same gate a PR would have provided,
+# performed in the same run.
+#
+# Branch protection still applies to these pushes: linear history, no force
+# push, no deletions, conversation resolution, and enforce_admins so a
+# deliberate local push is required for anything unusual. build.yml runs on
+# every push to main as the after-the-fact audit trail.
+
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: 'Force a phase (e.g. phase-05). Empty = auto-select.'
+        required: false
+        default: ''
+      review:
+        description: 'Run the reviewer subagent after the phase'
+        required: false
+        type: boolean
+        default: true
+  repository_dispatch:
+    types: [ops_tick]
+
+permissions:
+  contents: write
+  issues: write
+  checks: read
+  # Required so a phase can edit a workflow file. Without it every push touching
+  # .github/workflows/** is rejected with "refusing to allow a GitHub App to
+  # create or update workflow ... without workflows permission", which is how
+  # phase-02 lost its work five times over.
+  workflows: write
+
+concurrency:
+  group: ops-pipeline
+  # false on purpose. phase_runner.sh checkpoints to pf-bot/wip/<phase> every
+  # 300s, but work done between two checkpoints lives only in the working tree.
+  # Cancelling in that window would destroy it. With false, a new tick queues
+  # and starts after the prior run's push has completed.
+  cancel-in-progress: false
+
+env:
+  OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+  # Primary is space-bunny-free. The rest are free-tier fallbacks, ranked by
+  # coding benchmarks. phase_runner.sh advances down this chain ONLY on
+  # model-level failures (rate limit, provider outage, unknown id, no output),
+  # never on a real work failure.
+  OPENCODE_MODEL: >-
+    opencode/space-bunny-free,opencode/muse-spark-1.3-contributor-free,opencode/muse-spark-1.2-contributor-free,opencode/big-pickle,openrouter/poolside/laguna-s-2.1:free,openrouter/thinkingmachines/inkling:free,opencode/nemotron-3-ultra-free,openrouter/nvidia/nemotron-3-ultra-550b-a55b:free,openrouter/nvidia/nemotron-3-super-120b-a12b:free,openrouter/thinkingmachines/inkling-small:free,opencode/mimo-v2.5-free,opencode/nemotron-3.5-lightning-free,openrouter/nemotron-3.5-lightning:free,openrouter/nemotron-3-nano-omni-30b-a3b-reasoning:free,openrouter/cohere/north-mini-code:free,opencode/ling-3.0-flash-fin-free,openrouter/poolside/laguna-xs-2.1:free,openrouter/google/gemma-4-31b-it:free,openrouter/nex-agi/nex-n2.5-pro:free,openrouter/liquid/lfm-2.5-2.6b:free,openrouter/free
+  FLUTTER_VERSION: 3.44.8
+  OPENCODE_VERSION: 1.15.12
+
+jobs:
+  select-phase:
+    name: select phase
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      phase: ${{ steps.phase.outputs.phase }}
+      exists: ${{ steps.phase.outputs.exists }}
+      timeout: ${{ steps.phase.outputs.timeout }}
+    steps:
+      - id: phase
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCED: ${{ inputs.phase }}
+        run: |
+          set -uo pipefail
+
+          gh api "repos/${GITHUB_REPOSITORY}/git/trees/HEAD?recursive=1" \
+            --jq '.tree[].path' > /tmp/tree.txt || { echo "exists=false" >> "$GITHUB_OUTPUT"; exit 0; }
+
+          mkdir -p /tmp/phases
+          grep -E '^workspace/phase-[0-9]+/' /tmp/tree.txt | cut -d/ -f2 | sort -V -u > /tmp/phase_names.txt
+          [ -s /tmp/phase_names.txt ] || { echo "no phases declared"; echo "exists=false" >> "$GITHUB_OUTPUT"; exit 0; }
+
+          while read -r name; do
+            [ -n "$name" ] || continue
+            for m in done blocked deferred attempts terminal; do
+              grep -qx "workspace/${name}/.${m}" /tmp/tree.txt && touch "/tmp/phases/${name}.${m}"
+            done
+          done < /tmp/phase_names.txt
+
+          phase_timeout() {
+            local t
+            t="$(gh api "repos/${GITHUB_REPOSITORY}/contents/workspace/$1/.timeout" \
+                  --jq '.content' 2>/dev/null | base64 -d 2>/dev/null | tr -dc '0-9')"
+            if [ -n "$t" ] && [ "$t" -ge 1 ] 2>/dev/null; then printf '%s' "$t"; else printf '90'; fi
+          }
+
+          emit() {
+            echo "phase=$1"     >> "$GITHUB_OUTPUT"
+            echo "exists=true"  >> "$GITHUB_OUTPUT"
+            echo "timeout=$(phase_timeout "$1")" >> "$GITHUB_OUTPUT"
+          }
+
+          if [ -n "$FORCED" ]; then
+            echo "manual override"
+            emit "$FORCED"
+            exit 0
+          fi
+
+          if grep -qx "workspace/.stop" /tmp/tree.txt; then
+            echo "::notice::workspace/.stop present, pipeline halted"
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # A deferred phase is a rate limit from a previous tick. Take it first
+          # so a single limit does not block the queue behind it. A deferred
+          # terminal phase waits its turn, see pass 2.
+          for d in $(ls /tmp/phases/*.deferred 2>/dev/null | sort -V); do
+            n="$(basename "$d" .deferred)"
+            [ -f "/tmp/phases/${n}.terminal" ] && continue
+            emit "$n"
+            exit 0
+          done
+
+          # Pass 1: lowest ordinary phase still outstanding.
+          while read -r name; do
+            [ -n "$name" ] || continue
+            [ -f "/tmp/phases/${name}.terminal" ] && continue
+            if [ ! -f "/tmp/phases/${name}.done" ] && [ ! -f "/tmp/phases/${name}.blocked" ]; then
+              emit "$name"
+              exit 0
+            fi
+          done < /tmp/phase_names.txt
+
+          # Pass 2: only once the ordinary queue is empty does a terminal phase
+          # run, so the release build is always last. Any new ordinary phase
+          # pushes the terminal phase back to the end.
+          for d in $(ls /tmp/phases/*.deferred 2>/dev/null | sort -V); do
+            n="$(basename "$d" .deferred)"
+            [ -f "/tmp/phases/${n}.terminal" ] || continue
+            emit "$n"
+            exit 0
+          done
+
+          while read -r name; do
+            [ -n "$name" ] || continue
+            [ -f "/tmp/phases/${name}.terminal" ] || continue
+            if [ ! -f "/tmp/phases/${name}.done" ] && [ ! -f "/tmp/phases/${name}.blocked" ]; then
+              emit "$name"
+              exit 0
+            fi
+          done < /tmp/phase_names.txt
+
+          BLOCKED=$(ls /tmp/phases/*.blocked 2>/dev/null | wc -l)
+          if [ "${BLOCKED}" -gt 0 ]; then
+            echo "::warning::${BLOCKED} blocked phase(s) awaiting a human: $(ls /tmp/phases/*.blocked 2>/dev/null | xargs -n1 basename | sed 's/.blocked//' | tr '\n' ' ')"
+          fi
+
+          echo "all phases resolved, pipeline complete"
+          echo "exists=false" >> "$GITHUB_OUTPUT"
+
+  run-phase:
+    name: run phase
+    needs: select-phase
+    if: needs.select-phase.outputs.exists == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ fromJSON(needs.select-phase.outputs.timeout) }}
+    outputs:
+      phase: ${{ steps.meta.outputs.phase }}
+      done: ${{ steps.push.outputs.done }}
+      env_blocked: ${{ steps.push.outputs.env_blocked }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Install opencode
+        run: |
+          set -euo pipefail
+          curl -fsSL https://opencode.ai/install | bash -s -- --version "$OPENCODE_VERSION"
+          echo "$HOME/.opencode/bin" >> "$GITHUB_PATH"
+          # GITHUB_PATH only affects later steps, so this step needs its own PATH.
+          export PATH="$HOME/.opencode/bin:$PATH"
+          opencode --version
+
+      - name: Meta
+        id: meta
+        run: |
+          echo "phase=${{ needs.select-phase.outputs.phase }}" >> "$GITHUB_OUTPUT"
+          git config user.name "pixelforge-bot"
+          git config user.email "pixelforge-bot@users.noreply.github.com"
+
+      - name: Run phase
+        id: run
+        continue-on-error: true
+        env:
+          MAX_ATTEMPTS: 3
+          CHECKPOINT_SECONDS: 300
+        run: |
+          chmod +x scripts/phase_runner.sh
+          set +e
+          bash scripts/phase_runner.sh "${{ needs.select-phase.outputs.phase }}"
+          echo "exit=$?"
+          exit 0
+
+      # Commit and push before review, not after. If the review, or this job,
+      # then times out, the phase is already on main and the timeout cannot
+      # destroy it. This is the ordering that matters most.
+      - name: Commit and push to main
+        id: push
+        env:
+          PHASE: ${{ needs.select-phase.outputs.phase }}
+        run: |
+          set -uo pipefail
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "no changes to commit"
+          else
+            git commit -m "ops(${PHASE}): phase work"
+            PUSHED=0
+            for i in 1 2 3 4 5; do
+              if git push origin HEAD:main; then
+                echo "pushed on attempt $i"
+                PUSHED=1
+                break
+              fi
+              echo "push rejected (attempt $i), rebasing onto latest main"
+              git pull --rebase origin main || true
+              sleep 3
+            done
+            if [ "$PUSHED" = "0" ]; then
+              echo "::error::push to main failed after 5 attempts, saving to a recovery branch and a patch"
+              git branch -f "pf-bot/recovery/${PHASE}" HEAD
+              git push -f origin "pf-bot/recovery/${PHASE}" || true
+              git format-patch --stdout -1 > "ops-${PHASE}.patch" || true
+              exit 1
+            fi
+          fi
+
+          # .done is written only after `flutter analyze` and `flutter test`
+          # both pass, so its presence on main is the proof this tree is green.
+          if [ -f "workspace/${PHASE}/.done" ]; then
+            echo "done=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "done=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Surfaced as a job output rather than read from git by the retrigger.
+          if [ -f "workspace/${PHASE}/.env_blocked" ]; then
+            echo "env_blocked=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "env_blocked=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload logs
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: ops-logs-${{ needs.select-phase.outputs.phase }}
+          path: logs/${{ needs.select-phase.outputs.phase }}*
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Report status
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PHASE: ${{ needs.select-phase.outputs.phase }}
+        run: |
+          set -uo pipefail
+          mkdir -p logs
+          if [ -f "workspace/${PHASE}/.done" ]; then
+            echo "::notice::phase ${PHASE} complete and on main"
+          elif [ -f "workspace/${PHASE}/.deferred" ]; then
+            echo "::notice::phase ${PHASE} deferred (rate limit), next tick retries"
+          elif [ -f "workspace/${PHASE}/.env_blocked" ]; then
+            echo "::warning::environment not ready: $(cat workspace/${PHASE}/.env_blocked 2>/dev/null)"
+          elif [ -f "workspace/${PHASE}/.no_work" ]; then
+            echo "::warning::phase ${PHASE} produced no work"
+          elif [ -f "workspace/${PHASE}/.blocked" ]; then
+            echo "::error::phase ${PHASE} blocked after max attempts"
+            N=$(gh issue list --state open --search "ops blocked ${PHASE}" --json number --jq 'length' 2>/dev/null || echo 0)
+            if [ "$N" = "0" ]; then
+              B=$(mktemp)
+              {
+                echo "Phase **${PHASE}** hit the attempt cap and is now skipped by the pipeline."
+                echo
+                echo "## Log tail"
+                echo '```'
+                tail -80 "logs/${PHASE}.log" 2>/dev/null || echo "(no log)"
+                echo '```'
+                echo
+                echo "## Verify log tail"
+                echo '```'
+                tail -80 "logs/${PHASE}.verify.log" 2>/dev/null || echo "(none)"
+                echo '```'
+                echo
+                echo "Fix the cause, then delete \`workspace/${PHASE}/.blocked\` and \`workspace/${PHASE}/.attempts\` and push."
+              } > "$B"
+              gh issue create --title "ops blocked: ${PHASE}" --body-file "$B" >/dev/null 2>&1 || true
+            fi
+          else
+            echo "::warning::phase ${PHASE} did not complete"
+          fi
+
+  review:
+    name: review
+    needs: [select-phase, run-phase]
+    if: >-
+      needs.select-phase.outputs.exists == 'true' &&
+      needs.run-phase.outputs.done == 'true' &&
+      inputs.review != false
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Install opencode
+        run: |
+          set -euo pipefail
+          curl -fsSL https://opencode.ai/install | bash -s -- --version "$OPENCODE_VERSION"
+          echo "$HOME/.opencode/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.opencode/bin:$PATH"
+          opencode --version
+
+      - name: Confirm main is green before reviewing
+        env:
+          PHASE: ${{ needs.select-phase.outputs.phase }}
+        run: |
+          set -uo pipefail
+          git config user.name "pixelforge-bot"
+          git config user.email "pixelforge-bot@users.noreply.github.com"
+          git pull --ff-only origin main || git fetch origin main && git reset --hard origin/main
+          if [ ! -f "workspace/${PHASE}/.done" ]; then
+            echo "::error::no .done on main for ${PHASE}; the phase did not verify"
+            exit 1
+          fi
+          echo "reviewing main at $(git rev-parse --short HEAD)"
+
+      - name: Review and fix
+        id: review
+        continue-on-error: true
+        run: |
+          chmod +x scripts/phase_runner.sh
+          set +e
+          bash scripts/phase_runner.sh "${{ needs.select-phase.outputs.phase }}" --review-only
+          echo "exit=$?"
+          exit 0
+
+      - name: Push review fixes
+        if: always()
+        env:
+          PHASE: ${{ needs.select-phase.outputs.phase }}
+        run: |
+          set -uo pipefail
+          git add -A
+          if git diff --cached --quiet; then
+            echo "no review changes"
+            exit 0
+          fi
+          git commit -m "ops(${PHASE}): review fixes"
+          PUSHED=0
+          for i in 1 2 3 4 5; do
+            if git push origin HEAD:main; then
+              echo "review fixes pushed on attempt $i"
+              PUSHED=1
+              break
+            fi
+            echo "push rejected (attempt $i), rebasing onto latest main"
+            git pull --rebase origin main || true
+            sleep 3
+          done
+          if [ "$PUSHED" = "0" ]; then
+            echo "::error::could not push review fixes for ${PHASE}, saving a recovery branch"
+            git branch -f "pf-bot/recovery/${PHASE}-review" HEAD
+            git push -f origin "pf-bot/recovery/${PHASE}-review" || true
+            exit 1
+          fi
+
+      - name: Upload review logs
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: ops-review-${{ needs.select-phase.outputs.phase }}
+          path: |
+            logs/${{ needs.select-phase.outputs.phase }}.review.log
+            logs/${{ needs.select-phase.outputs.phase }}.fix.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+  retrigger:
+    name: chain next phase
+    needs: [select-phase, run-phase]
+    if: always() && needs.select-phase.outputs.exists == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Chain or stand down
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PHASE: ${{ needs.select-phase.outputs.phase }}
+          ENV_BLOCKED: ${{ needs.run-phase.outputs.env_blocked }}
+        run: |
+          set -uo pipefail
+
+          # Environment not ready: no point chaining, the next phase would fail
+          # the same way. The cron retries, which is the right cadence for "the
+          # key was just added".
+          if [ "$ENV_BLOCKED" = "true" ]; then
+            echo "environment was not ready, not re-dispatching. ops-tick will retry."
+            exit 0
+          fi
+
+          # Do not queue behind yourself. repository_dispatch creates a run
+          # unconditionally, so with cancel-in-progress false a slow phase plus
+          # the 10-minute cron accumulates queued runs faster than they drain.
+          QUEUED=$(gh api -H "Accept: application/vnd.github+json" \
+            "/repos/${GITHUB_REPOSITORY}/actions/runs?status=queued&per_page=20" \
+            --jq '[.workflow_runs[] | select(.name == "ops")] | length' 2>/dev/null || echo 0)
+          RUNNING=$(gh api -H "Accept: application/vnd.github+json" \
+            "/repos/${GITHUB_REPOSITORY}/actions/runs?status=in_progress&per_page=20" \
+            --jq '[.workflow_runs[] | select(.name == "ops")] | length' 2>/dev/null || echo 0)
+
+          if [ "${QUEUED:-0}" -gt 0 ] || [ "${RUNNING:-0}" -gt 0 ]; then
+            echo "another ops run is already ${RUNNING:-0} running / ${QUEUED:-0} queued, not re-dispatching"
+            exit 0
+          fi
+
+          sleep 10
+          gh api -X POST -H "Accept: application/vnd.github+json" \
+            "/repos/${GITHUB_REPOSITORY}/dispatches" \
+            -f "event_type=ops_tick" \
+            -f "client_payload[phase]=${PHASE}" \
+            -f "client_payload[run_id]=${{ github.run_id }}" \
+            || echo "::warning::re-dispatch failed, ops-tick cron will retry"
