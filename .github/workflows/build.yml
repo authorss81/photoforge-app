@@ -158,6 +158,27 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  ios:
+    name: ios
+    needs: verify
+    # macos runners cost 10x linux minutes, so this runs on main pushes only,
+    # never on pull requests.
+    if: github.event_name != 'pull_request'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Build iOS without codesigning
+        run: flutter build ios --no-codesign
+
   release:
     name: release
     needs: [android, windows]

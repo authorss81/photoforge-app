@@ -65,8 +65,9 @@ metadata control + offline* across **mobile and desktop** in one app. That is th
 |---|---|
 | Windows | Built in CI |
 | Android | Built in CI (APK + AAB) |
+| iOS | Compiled in CI (`--no-codesign`, macOS runner, main pushes only) |
 | Web | Supported |
-| iOS / macOS / Linux | Sources present, not built in CI |
+| macOS / Linux | Sources present, not built in CI |
 
 ### Input formats
 
