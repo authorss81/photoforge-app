@@ -1,5 +1,6 @@
 package dev.pixelforge.pixelforge
 
+import android.app.Activity
 import android.content.ContentValues
 import android.content.Intent
 import android.graphics.Bitmap
@@ -21,21 +22,59 @@ class MainActivity : FlutterActivity() {
     private var photoPickerResult: MethodChannel.Result? = null
     private var backgroundChannel: MethodChannel? = null
 
+    companion object {
+        private const val REQUEST_PICK_IMAGES = 0x9117
+    }
+
     /// URIs shared into the app that Dart has not collected yet.
     private val pendingShared = mutableListOf<Uri>()
 
     /// System Photo Picker. Needs no permission and returns only what the
     /// user selected. Capped so one enthusiastic selection cannot OOM the app;
     /// the batch memory guard handles the rest.
-    private val pickImagesLauncher = registerForActivityResult(
-        ActivityResultContracts.PickMultipleVisualMedia(20),
-    ) { uris: List<Uri> ->
+    ///
+    /// This deliberately uses startActivityForResult rather than
+    /// registerForActivityResult. The latter is a ComponentActivity method and
+    /// FlutterActivity extends plain android.app.Activity, so it does not
+    /// resolve. The alternative, extending FlutterFragmentActivity, would oblige
+    /// the launch theme to descend from Theme.AppCompat or the activity crashes
+    /// at launch. Neither can be checked without the Android toolchain, so the
+    /// path with no new runtime requirement is the right one. The contract
+    /// object is still used to build the intent, which keeps the API-level and
+    /// media-type rules in one place.
+    private val pickMediaContract = ActivityResultContracts.PickMultipleVisualMedia(20)
+
+    // startActivityForResult and the Intent extra it reads are both deprecated
+    // on modern Android, but they are the only result APIs available on plain
+    // Activity. The replacement requires FlutterFragmentActivity, which in turn
+    // requires an AppCompat-derived launch theme; that is a runtime crash
+    // waiting to happen and cannot be verified without the Android toolchain.
+    // Deprecated and working beats modern and unverified.
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQUEST_PICK_IMAGES) return
         val result = photoPickerResult
         photoPickerResult = null
-        if (result == null) return@registerForActivityResult
+        if (result == null) return
+
+        // The picker reports multiple selections in clipData and a lone
+        // selection as the plain data URI. Read both, or picking one image
+        // silently returns an empty list.
+        val uris = mutableListOf<Uri>()
+        data?.clipData?.let { clip ->
+            for (i in 0 until clip.itemCount) uris.add(clip.getItemAt(i).uri)
+        }
         if (uris.isEmpty()) {
+            // A lone selection arrives as the plain data URI. The
+            // ACTION_PICK_IMAGES_EXTRA form is deliberately not used: it is an
+            // API 33 constant and this picker is reachable from API 30.
+            data?.data?.let { uris.add(it) }
+        }
+
+        if (uris.isEmpty() || resultCode != Activity.RESULT_OK) {
             result.success(emptyList<Map<String, Any>>())
-            return@registerForActivityResult
+            return
         }
         try {
             result.success(
@@ -159,10 +198,12 @@ class MainActivity : FlutterActivity() {
             }
             photoPickerResult = result
             try {
-                pickImagesLauncher.launch(
-                    PickVisualMediaRequest(
-                        ActivityResultContracts.PickVisualMedia.ImageOnly,
-                    ),
+                val request = PickVisualMediaRequest(
+                    ActivityResultContracts.PickVisualMedia.ImageOnly,
+                )
+                startActivityForResult(
+                    pickMediaContract.createIntent(this, request),
+                    REQUEST_PICK_IMAGES,
                 )
             } catch (e: Exception) {
                 photoPickerResult = null

@@ -27,11 +27,17 @@ import UniformTypeIdentifiers
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    // The bridge itself exposes pluginRegistry and applicationRegistrar, not a
+    // messenger. The messenger comes from the registrar, which is the documented
+    // route for channels on an implicitly created engine. Using
+    // engineBridge.binaryMessenger does not compile.
+    let messenger = engineBridge.applicationRegistrar.messenger()
+
     let decoder = FlutterMethodChannel(
       name: "dev.pixelforge/native_decoder",
-      binaryMessenger: engineBridge.binaryMessenger
+      binaryMessenger: messenger
     )
-    decoder.setMethodCallHandler { [weak self] call, result in
+    decoder.setMethodCallHandler { [weak self] (call: FlutterMethodCall, result: @escaping FlutterResult) in
       guard call.method == "decodeImage" else {
         result(FlutterMethodNotImplemented)
         return
@@ -56,9 +62,9 @@ import UniformTypeIdentifiers
 
     let picker = FlutterMethodChannel(
       name: "dev.pixelforge/system_picker",
-      binaryMessenger: engineBridge.binaryMessenger
+      binaryMessenger: messenger
     )
-    picker.setMethodCallHandler { [weak self] call, result in
+    picker.setMethodCallHandler { [weak self] (call: FlutterMethodCall, result: @escaping FlutterResult) in
       guard call.method == "pickImages" else {
         result(FlutterMethodNotImplemented)
         return
@@ -68,9 +74,9 @@ import UniformTypeIdentifiers
 
     let shared = FlutterMethodChannel(
       name: "dev.pixelforge/shared_content",
-      binaryMessenger: engineBridge.binaryMessenger
+      binaryMessenger: messenger
     )
-    shared.setMethodCallHandler { [weak self] call, result in
+    shared.setMethodCallHandler { [weak self] (call: FlutterMethodCall, result: @escaping FlutterResult) in
       switch call.method {
       case "getSharedImages":
         result(self?.pendingShared ?? [])
