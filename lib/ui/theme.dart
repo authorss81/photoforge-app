@@ -88,7 +88,9 @@ class AppTheme {
       segmentedButtonTheme: SegmentedButtonThemeData(
         style: ButtonStyle(
           shape: WidgetStatePropertyAll(
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
+            RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+            ),
           ),
         ),
       ),
@@ -98,7 +100,9 @@ class AppTheme {
         thumbShape: RoundSliderThumbShape(enabledThumbRadius: 7),
       ),
       chipTheme: base.chipTheme.copyWith(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+        ),
         side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.6)),
       ),
       listTileTheme: const ListTileThemeData(

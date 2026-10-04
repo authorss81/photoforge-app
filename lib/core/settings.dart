@@ -687,9 +687,9 @@ class ResizeSettings extends ChangeNotifier {
     'outdir': _outputDirectory,
     'ow': _overwrite,
     'keepext': _keepExtensionWhenKeepFormat,
-'writeNow': _writeImmediately,
-        'memMb': _memoryBudgetMb,
-        'extras': [for (final e in _extraOutputs) e.toJson()],
+    'writeNow': _writeImmediately,
+    'memMb': _memoryBudgetMb,
+    'extras': [for (final e in _extraOutputs) e.toJson()],
   };
 
   void _hydrateFrom(Map<String, dynamic>? j) {

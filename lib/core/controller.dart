@@ -258,10 +258,7 @@ class ResizeController extends ChangeNotifier {
         BackgroundService.isSupported &&
         (targets.length > 2 || totalInput > 10 * 1024 * 1024);
     if (useService) {
-      await BackgroundService.start(
-        targets.length,
-        onCancel: cancelBatch,
-      );
+      await BackgroundService.start(targets.length, onCancel: cancelBatch);
     }
 
     try {
@@ -472,8 +469,10 @@ class ResizeController extends ChangeNotifier {
     int preset,
     int page,
   ) {
-    final safe =
-        (presetName ?? 'output$preset').replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    final safe = (presetName ?? 'output$preset').replaceAll(
+      RegExp(r'[\\/:*?"<>|]'),
+      '_',
+    );
     final dot = fileName.lastIndexOf('.');
     if (dot <= 0) return '${fileName}_$safe';
     return '${fileName.substring(0, dot)}_$safe${fileName.substring(dot)}';

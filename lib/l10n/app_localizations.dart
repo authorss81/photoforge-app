@@ -420,8 +420,7 @@ class AppLocalizations {
   const AppLocalizations._();
 
   static AppStrings of(BuildContext context) {
-    final strings =
-        Localizations.of<AppStrings>(context, AppStrings);
+    final strings = Localizations.of<AppStrings>(context, AppStrings);
     return strings ?? EnStrings();
   }
 
@@ -431,8 +430,7 @@ class AppLocalizations {
   static const List<Locale> supportedLocales = [Locale('en')];
 }
 
-class _AppLocalizationsDelegate
-    extends LocalizationsDelegate<AppStrings> {
+class _AppLocalizationsDelegate extends LocalizationsDelegate<AppStrings> {
   const _AppLocalizationsDelegate();
 
   @override

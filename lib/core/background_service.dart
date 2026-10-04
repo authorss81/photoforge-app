@@ -14,8 +14,9 @@ import 'package:flutter/services.dart';
 class BackgroundService {
   const BackgroundService._();
 
-  static const MethodChannel channel =
-      MethodChannel('dev.pixelforge/background');
+  static const MethodChannel channel = MethodChannel(
+    'dev.pixelforge/background',
+  );
 
   static bool get isSupported =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
@@ -24,7 +25,10 @@ class BackgroundService {
 
   /// Starts the service and routes the notification's cancel action to
   /// [onCancel]. Idempotent; safe to call when already started.
-  static Future<void> start(int total, {required void Function() onCancel}) async {
+  static Future<void> start(
+    int total, {
+    required void Function() onCancel,
+  }) async {
     if (!isSupported) return;
     channel.setMethodCallHandler((call) async {
       if (call.method == 'onCancel') onCancel();

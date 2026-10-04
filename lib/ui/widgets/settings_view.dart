@@ -206,10 +206,7 @@ class SettingsView extends StatelessWidget {
           dense: true,
           value: s.allowUpscale,
           onChanged: s.setAllowUpscale,
-          title: Text(
-            l10n.allowUpscale,
-            style: TextStyle(fontSize: 13.5),
-          ),
+          title: Text(l10n.allowUpscale, style: TextStyle(fontSize: 13.5)),
           subtitle: Text(
             l10n.allowUpscaleHint,
             style: TextStyle(
@@ -252,7 +249,10 @@ class SettingsView extends StatelessWidget {
       dense: true,
       value: s.preserveAnimation,
       onChanged: s.setPreserveAnimation,
-      title: Text(AppLocalizations.of(context).preserveAnimation, style: TextStyle(fontSize: 13.5)),
+      title: Text(
+        AppLocalizations.of(context).preserveAnimation,
+        style: TextStyle(fontSize: 13.5),
+      ),
       subtitle: Text(
         l10n.preserveAnimationBody,
         style: TextStyle(
@@ -333,7 +333,10 @@ class SettingsView extends StatelessWidget {
           dense: true,
           value: s.webpLossless,
           onChanged: s.setWebpLossless,
-          title: Text(AppLocalizations.of(context).losslessWebp, style: TextStyle(fontSize: 13.5)),
+          title: Text(
+            AppLocalizations.of(context).losslessWebp,
+            style: TextStyle(fontSize: 13.5),
+          ),
         ),
         if (!s.webpLossless)
           _Slider(
@@ -396,14 +399,9 @@ class SettingsView extends StatelessWidget {
           dense: true,
           value: s.stripMetadata,
           onChanged: s.setStripMetadata,
-          title: Text(
-            l10n.stripMetadata,
-            style: TextStyle(fontSize: 13.5),
-          ),
+          title: Text(l10n.stripMetadata, style: TextStyle(fontSize: 13.5)),
           subtitle: Text(
-            s.stripMetadata
-                ? l10n.stripMetadataHint
-                : l10n.stripMetadataOff,
+            s.stripMetadata ? l10n.stripMetadataHint : l10n.stripMetadataOff,
             style: TextStyle(
               fontSize: 11,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -442,10 +440,7 @@ class SettingsView extends StatelessWidget {
             dense: true,
             value: s.keepExtensionWhenKeepFormat,
             onChanged: s.setKeepExtensionWhenKeepFormat,
-            title: Text(
-              l10n.keepExtension,
-              style: TextStyle(fontSize: 13.5),
-            ),
+            title: Text(l10n.keepExtension, style: TextStyle(fontSize: 13.5)),
           ),
       ],
     );
@@ -731,20 +726,14 @@ class SettingsView extends StatelessWidget {
           dense: true,
           value: s.overwrite,
           onChanged: s.setOverwrite,
-          title: Text(
-            l10n.overwrite,
-            style: TextStyle(fontSize: 13.5),
-          ),
+          title: Text(l10n.overwrite, style: TextStyle(fontSize: 13.5)),
         ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           dense: true,
           value: s.writeImmediately,
           onChanged: s.setWriteImmediately,
-          title: Text(
-            l10n.writeImmediately,
-            style: TextStyle(fontSize: 13.5),
-          ),
+          title: Text(l10n.writeImmediately, style: TextStyle(fontSize: 13.5)),
           subtitle: Text(
             'Frees memory during large batches; re-running needs the files re-added',
             style: TextStyle(
@@ -856,9 +845,7 @@ class SettingsView extends StatelessWidget {
           )
         else
           Text(
-            extras.isEmpty
-                ? l10n.extraOutputsEmpty
-                : l10n.extraOutputsFull,
+            extras.isEmpty ? l10n.extraOutputsEmpty : l10n.extraOutputsFull,
             style: TextStyle(
               fontSize: 11,
               color: Theme.of(context).colorScheme.onSurfaceVariant,

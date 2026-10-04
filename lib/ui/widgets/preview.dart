@@ -250,7 +250,10 @@ class _SplitView extends StatelessWidget {
                 behavior: HitTestBehavior.translucent,
                 onHorizontalDragUpdate: (d) {
                   onFraction(
-                    ((dx + d.delta.dx) / constraints.maxWidth).clamp(0.02, 0.98),
+                    ((dx + d.delta.dx) / constraints.maxWidth).clamp(
+                      0.02,
+                      0.98,
+                    ),
                   );
                 },
                 child: Semantics(

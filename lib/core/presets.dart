@@ -29,16 +29,16 @@ class ResizePreset {
   final String note;
 
   Map<String, dynamic> toJson() => {
-        'name': name,
-        'group': group,
-        'mode': mode.name,
-        'width': width,
-        'height': height,
-        'format': format,
-        'quality': quality,
-        'targetKb': targetKb,
-        'note': note,
-      };
+    'name': name,
+    'group': group,
+    'mode': mode.name,
+    'width': width,
+    'height': height,
+    'format': format,
+    'quality': quality,
+    'targetKb': targetKb,
+    'note': note,
+  };
 
   static ResizePreset? fromJson(Map<String, dynamic>? j) {
     if (j == null) return null;

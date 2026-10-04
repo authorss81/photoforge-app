@@ -24,9 +24,7 @@ void main() {
       // data access of any kind, and exists only so Android 14+ lets the
       // batch service run with a visible notification. INTERNET or any
       // storage, camera, location or microphone permission fails this test.
-      const allowed = {
-        'android.permission.FOREGROUND_SERVICE_DATA_SYNC',
-      };
+      const allowed = {'android.permission.FOREGROUND_SERVICE_DATA_SYNC'};
       final xml = _withoutXmlComments(mainManifest.readAsStringSync());
       final requested = RegExp(
         r'<uses-permission[^>]*android:name\s*=\s*"([^"]+)"',

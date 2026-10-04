@@ -236,10 +236,10 @@ class _HomePageState extends State<HomePage> {
                 margin: const EdgeInsets.fromLTRB(10, 10, 10, 4),
                 child: Column(
                   children: [
-PaneHeader(
-                    AppLocalizations.of(context).outputSettings,
-                    icon: Icons.tune,
-                  ),
+                    PaneHeader(
+                      AppLocalizations.of(context).outputSettings,
+                      icon: Icons.tune,
+                    ),
                     Expanded(child: SettingsView(controller: controller)),
                   ],
                 ),
@@ -448,18 +448,19 @@ class _PreviewPaneState extends State<_PreviewPane> {
     final job = controller.selected;
     final theme = Theme.of(context);
 
-    final live = _view != _PreviewMode.before &&
+    final live =
+        _view != _PreviewMode.before &&
         job != null &&
         _liveForJob == job.id &&
         _liveBytes != null;
-    final original =
-        job == null ? null : (job.hasSource ? job.bytes : job.thumbnail);
+    final original = job == null
+        ? null
+        : (job.hasSource ? job.bytes : job.thumbnail);
     final processed = job == null
         ? null
         : (live
               ? _liveBytes
-              : (job.output ??
-                    (job.hasSource ? job.bytes : job.thumbnail)));
+              : (job.output ?? (job.hasSource ? job.bytes : job.thumbnail)));
     final l10n = AppLocalizations.of(context);
     final label = job == null
         ? null

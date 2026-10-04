@@ -95,14 +95,10 @@ void main() {
     final unlabeled = <String>[];
     for (final e in find.byType(IconButton).evaluate()) {
       final button = e.widget as IconButton;
-      final hasTooltip =
-          button.tooltip != null && button.tooltip!.isNotEmpty;
-      final hasSemantics = (e
-              .findAncestorWidgetOfExactType<Semantics>()
-              ?.properties
-              .label ??
-          '')
-          .isNotEmpty;
+      final hasTooltip = button.tooltip != null && button.tooltip!.isNotEmpty;
+      final hasSemantics =
+          (e.findAncestorWidgetOfExactType<Semantics>()?.properties.label ?? '')
+              .isNotEmpty;
       final hasTooltipWidget =
           e.findAncestorWidgetOfExactType<Tooltip>() != null;
       if (!hasTooltip && !hasSemantics && !hasTooltipWidget) {

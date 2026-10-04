@@ -111,7 +111,10 @@ class _EmptyQueue extends StatelessWidget {
               color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
             ),
             const SizedBox(height: AppSpacing.md),
-            Text(AppLocalizations.of(context).dropImagesHere, style: theme.textTheme.bodyMedium),
+            Text(
+              AppLocalizations.of(context).dropImagesHere,
+              style: theme.textTheme.bodyMedium,
+            ),
             const SizedBox(height: AppSpacing.xs),
             Text(
               AppLocalizations.of(context).dropImagesHint,

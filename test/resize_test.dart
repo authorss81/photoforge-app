@@ -839,34 +839,42 @@ void main() {
       expect(ResizeEngine.decodeCount - before, 0);
     });
 
-    test('extra outputs become named siblings with distinct files', () async {
-      final c = ResizeController();
-      c.settings
-        ..setMode(ResizeMode.width)
-        ..setWidth(200)
-        ..setFormat(OutputFormat.jpeg)
-        ..setNameTemplate('{name}_{preset}_{w}x{h}');
-      c.settings.addExtraOutput(Presets.byName('Web / Thumbnail')!);
-      c.addDroppedFiles([
-        (name: 'photo.jpg', bytes: _makeJpeg(600, 400), path: null),
-      ]);
-      await c.runBatch();
-      try {
-        // Main output plus one preset sibling.
-        expect(c.jobs.length, 2);
-        expect(c.jobs[0].status, JobStatus.done);
-        expect(c.jobs[1].status, JobStatus.done);
-        expect(c.jobs[1].presetName, 'Web / Thumbnail');
-        expect(c.jobs[0].name, isNot(equals(c.jobs[1].name)));
+    test(
+      'extra outputs become named siblings with distinct files',
+      () async {
+        final c = ResizeController();
+        c.settings
+          ..setMode(ResizeMode.width)
+          ..setWidth(200)
+          ..setFormat(OutputFormat.jpeg)
+          ..setNameTemplate('{name}_{preset}_{w}x{h}');
+        c.settings.addExtraOutput(Presets.byName('Web / Thumbnail')!);
+        c.addDroppedFiles([
+          (name: 'photo.jpg', bytes: _makeJpeg(600, 400), path: null),
+        ]);
+        await c.runBatch();
+        try {
+          // Main output plus one preset sibling.
+          expect(c.jobs.length, 2);
+          expect(c.jobs[0].status, JobStatus.done);
+          expect(c.jobs[1].status, JobStatus.done);
+          expect(c.jobs[1].presetName, 'Web / Thumbnail');
+          expect(c.jobs[0].name, isNot(equals(c.jobs[1].name)));
 
-        final n0 = await c.resolveOutputName(c.jobs[0], 1);
-        final n1 = await c.resolveOutputName(c.jobs[1], 2);
-        expect(n0, isNot(equals(n1)), reason: 'sibling files must not collide');
-        expect(n1, contains('Thumbnail'));
-      } finally {
-        c.dispose();
-      }
-    }, timeout: const Timeout(Duration(minutes: 2)));
+          final n0 = await c.resolveOutputName(c.jobs[0], 1);
+          final n1 = await c.resolveOutputName(c.jobs[1], 2);
+          expect(
+            n0,
+            isNot(equals(n1)),
+            reason: 'sibling files must not collide',
+          );
+          expect(n1, contains('Thumbnail'));
+        } finally {
+          c.dispose();
+        }
+      },
+      timeout: const Timeout(Duration(minutes: 2)),
+    );
   });
 
   group('isolates', () {
@@ -1356,9 +1364,9 @@ void main() {
       try {
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(BackgroundService.channel, (call) async {
-          calls.add(call.method);
-          return null;
-        });
+              calls.add(call.method);
+              return null;
+            });
         await BackgroundService.start(4, onCancel: () {});
         await BackgroundService.progress(2, 4);
         await BackgroundService.stop();
@@ -1376,8 +1384,8 @@ void main() {
       try {
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(BackgroundService.channel, (call) async {
-          throw PlatformException(code: 'DENIED');
-        });
+              throw PlatformException(code: 'DENIED');
+            });
         await BackgroundService.start(4, onCancel: () {});
         await BackgroundService.progress(1, 4);
         await BackgroundService.stop();
@@ -1395,9 +1403,9 @@ void main() {
         var called = false;
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(BackgroundService.channel, (call) async {
-          called = true;
-          return null;
-        });
+              called = true;
+              return null;
+            });
         expect(BackgroundService.isSupported, isFalse);
         await BackgroundService.start(4, onCancel: () {});
         await BackgroundService.progress(1, 4);
@@ -1440,8 +1448,12 @@ void main() {
         ..setFormat(OutputFormat.png)
         ..setGrayscale(1.0);
       final src = _makeJpeg(200, 140);
-      final a = img.decodePng((await ResizeEngine.renderPreview(src, plain, name: 'p.jpg'))!)!;
-      final b = img.decodePng((await ResizeEngine.renderPreview(src, gray, name: 'p.jpg'))!)!;
+      final a = img.decodePng(
+        (await ResizeEngine.renderPreview(src, plain, name: 'p.jpg'))!,
+      )!;
+      final b = img.decodePng(
+        (await ResizeEngine.renderPreview(src, gray, name: 'p.jpg'))!,
+      )!;
       var saturation = 0;
       for (final p in b) {
         saturation += ((p.r - p.g).abs() + (p.g - p.b).abs()).toInt();
