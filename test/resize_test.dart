@@ -733,7 +733,15 @@ void main() {
                 'is not. Got: ${e.message}',
           );
           expect(e.message, contains('HEIC'));
-          expect(e.message, contains('photo.heic'));
+          // The file name is carried in `detail`, not interpolated into the
+          // message. Both the fallback path in _decodeFailure and the libheif
+          // path build their wording independently, so asserting on the
+          // message alone would only hold for one of them.
+          expect(
+            '${e.message} ${e.detail}',
+            contains('photo.heic'),
+            reason: 'the failure must identify which file failed',
+          );
         }
       });
 
