@@ -1,0 +1,297 @@
+name: release
+
+# Builds, verifies and attaches release artifacts to a draft GitHub release.
+#
+# This never publishes. Creating a release is irreversible in one direction: once
+# a version is out, it cannot be replaced. A human promotes the draft after
+# checking the artifacts, and a human pushes the tag. Neither step happens here.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build, e.g. v1.0.0. Must already exist on main.'
+        required: true
+        default: ''
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_VERSION: 3.44.8
+  JAVA_VERSION: 17
+
+jobs:
+  plan:
+    name: plan
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      ok: ${{ steps.meta.outputs.ok }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Version derivation is strict on purpose. A tag like v1.2 or "latest" must
+      # fail loudly rather than silently producing an artifact labelled 1.2.0,
+      # because that artifact gets installed by people.
+      - name: Derive and validate the version
+        id: meta
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+
+          VERSION="${TAG#v}"
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::tag '$TAG' does not parse as vMAJOR.MINOR.PATCH"
+            exit 1
+          fi
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+
+          # The declared version must not be ahead of the tag, or the artifact
+          # would claim a version the source does not carry.
+          DECLARED="$(grep -E '^version:' pubspec.yaml | head -1 | sed 's/.*+//')"
+          echo "pubspec build number: $DECLARED"
+          echo "pubspec version: $(grep -E '^version:' pubspec.yaml | head -1)"
+
+  android:
+    name: android artifacts
+    needs: plan
+    if: needs.plan.outputs.ok == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - run: flutter pub get
+
+      # The version comes from the tag, not from pubspec, and is written into
+      # pubspec so the artifact and the tag cannot disagree. The build number is
+      # taken from pubspec's existing +N so it keeps increasing.
+      - name: Stamp the version from the tag
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          set -euo pipefail
+          BUILD="$(grep -E '^version:' pubspec.yaml | head -1 | sed 's/.*+//')"
+          sed -i.bak -E "s|^version: .*|version: ${VERSION}+${BUILD}|" pubspec.yaml
+          grep -E '^version:' pubspec.yaml
+          rm -f pubspec.yaml.bak
+
+      # Signed with the release keystore from phase-02. When the secret is absent
+      # a throwaway key is generated and the run says so loudly, because a
+      # debug-signed release cannot be updated in place and Play rejects it.
+      - name: Provide signing key
+        env:
+          RELEASE_KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_B64 }}
+        run: |
+          set -euo pipefail
+          if [ -n "${RELEASE_KEYSTORE_B64:-}" ]; then
+            echo "::notice::signing with the release keystore from secrets"
+            echo "$RELEASE_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            cat > android/key.properties <<EOF
+          storeFile=$RUNNER_TEMP/release.keystore
+          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.KEY_ALIAS }}
+          keyPassword=${{ secrets.KEY_PASSWORD }}
+          EOF
+          else
+            echo "::warning::no RELEASE_KEYSTORE_B64 secret; generating a throwaway key"
+            echo "::warning::this proves the pipeline, not the product. Never publish it."
+            keytool -genkeypair -v -keystore "$RUNNER_TEMP/ci.keystore" \
+              -alias ci -keyalg RSA -keysize 2048 -validity 2 \
+              -storepass android -keypass android \
+              -dname "CN=PixelForge CI, OU=CI, O=PixelForge, L=CI, S=CI, C=US" \
+              -noprompt
+            cat > android/key.properties <<EOF
+          storeFile=$RUNNER_TEMP/ci.keystore
+          storePassword=android
+          keyAlias=ci
+          keyPassword=android
+          EOF
+          fi
+
+      - name: Build universal APK
+        run: flutter build apk --release
+
+      - name: Build per-architecture APKs
+        run: flutter build apk --release --split-per-abi
+
+      - name: Build Play Store bundle
+        run: flutter build appbundle --release
+
+      # The product's central claim, checked against the built artifact rather
+      # than the source manifest. Source and artifact can disagree.
+      - name: Verify the APK requests no permissions
+        run: bash scripts/verify-apk-permissions.sh build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Verify the APK versionName matches the tag
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          set -euo pipefail
+          AAPT2="$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -name aapt2 -type f | sort -V | tail -1)"
+          BADGING="$("$AAPT2" dump badging build/app/outputs/flutter-apk/app-release.apk)"
+          echo "$BADGING" | head -3
+          ACTUAL="$(echo "$BADGING" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p" | head -1)"
+          if [ "$ACTUAL" != "$VERSION" ]; then
+            echo "::error::APK versionName is '$ACTUAL' but the tag says '$VERSION'"
+            exit 1
+          fi
+          echo "versionName matches the tag: $ACTUAL"
+
+      - name: Collect artifacts
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk \
+            "dist/pixelforge-${VERSION}-universal.apk"
+          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk \
+            "dist/pixelforge-${VERSION}-armv7.apk"
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
+            "dist/pixelforge-${VERSION}-arm64.apk"
+          cp build/app/outputs/flutter-apk/app-x86_64-release.apk \
+            "dist/pixelforge-${VERSION}-x64.apk"
+          cp build/app/outputs/bundle/release/app-release.aab \
+            "dist/pixelforge-${VERSION}.aab"
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pixelforge-android-${{ needs.plan.outputs.version }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 90
+
+  windows:
+    name: windows artifact
+    needs: plan
+    if: needs.plan.outputs.ok == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Stamp the version from the tag
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        shell: pwsh
+        run: |
+          $build = (Select-String -Path pubspec.yaml -Pattern '^version:').Line -replace '.*\+',''
+          (Get-Content pubspec.yaml) -replace '^version: .*', "version: $env:VERSION+$build" | Set-Content pubspec.yaml
+          Select-String -Path pubspec.yaml -Pattern '^version:'
+
+      - name: Build Windows release
+        run: flutter build windows --release
+
+      - name: Zip the bundle
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        shell: pwsh
+        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath "pixelforge-$env:VERSION-windows-x64.zip"
+
+      # A build step exiting zero does not mean the zip is runnable. This checks
+      # the executable and the plugin DLLs are actually inside it.
+      - name: Verify the zip is complete
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        shell: pwsh
+        run: |
+          $zip = "pixelforge-$env:VERSION-windows-x64.zip"
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $entries = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path $zip)).Entries.FullName
+          $exe = $entries | Where-Object { $_ -like '*pixelforge.exe' }
+          if (-not $exe) { throw "the zip contains no pixelforge.exe" }
+          $dlls = $entries | Where-Object { $_ -like '*.dll' }
+          if ($dlls.Count -lt 1) { throw "the zip contains no DLLs, so plugins are missing" }
+          Write-Output "zip contains:"
+          $entries | ForEach-Object { Write-Output "  $_" }
+          Write-Output "exe: $($exe -join ', ')"
+          Write-Output "dll count: $($dlls.Count)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pixelforge-windows-${{ needs.plan.outputs.version }}
+          path: pixelforge-${{ needs.plan.outputs.version }}-windows-x64.zip
+          if-no-files-found: error
+          retention-days: 90
+
+  publish:
+    name: draft release
+    needs: [plan, android, windows]
+    if: needs.plan.outputs.ok == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Collect release assets
+        uses: actions/download-artifact@v4
+        with:
+          path: all
+          pattern: pixelforge-*
+          merge-multiple: true
+
+      - name: List what will be attached
+        run: ls -la
+
+      # Draft, never published. Publishing is a human decision.
+      - name: Create or update the draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          draft: true
+          generate_release_notes: true
+          body: |
+            ## Draft release for ${{ needs.plan.outputs.version }}
+
+            **This is a draft. It must not be published until someone has
+            checked the artifacts below.**
+
+            ### Verify before promoting
+
+            - [ ] The universal APK installs on a real phone.
+            - [ ] `bash scripts/verify-apk-permissions.sh <apk>` reports no permissions.
+            - [ ] The Windows zip runs on a clean Windows machine.
+            - [ ] The signing key is the real release key, not the throwaway CI key.
+            - [ ] `versionName` matches this tag.
+
+            The offline claim is verified in CI against the built artifact, not
+            assumed from the source manifest. See docs/RELEASING.md.
+          files: |
+            *.apk
+            *.aab
+            *.zip
+          fail_on_unmatched_files: true
