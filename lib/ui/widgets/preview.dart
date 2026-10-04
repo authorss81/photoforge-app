@@ -230,13 +230,23 @@ class _SplitView extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             Image.memory(after, fit: BoxFit.contain),
-            ClipRect(
-              child: Align(
-                alignment: Alignment.centerLeft,
-                widthFactor: fraction.clamp(0.02, 0.98),
-                child: SizedBox(
-                  width: constraints.maxWidth,
-                  height: constraints.maxHeight,
+            // Positioned, not a plain child: StackFit.expand hands every
+            // non-positioned child tight constraints, so a SizedBox(width: dx)
+            // would be forced back to full width and the clip would do nothing.
+            // The same is true of Align(widthFactor:), which shrink-wraps via
+            // constraints.constrain and is likewise ignored under tight
+            // constraints. Before that was worked out, "before" painted over
+            // the whole pane and the after image was never visible.
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: dx,
+              child: ClipRect(
+                child: OverflowBox(
+                  alignment: Alignment.centerLeft,
+                  minWidth: constraints.maxWidth,
+                  maxWidth: constraints.maxWidth,
                   child: Image.memory(before, fit: BoxFit.contain),
                 ),
               ),
