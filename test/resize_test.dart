@@ -240,6 +240,55 @@ void main() {
       expect(res.metTarget, isFalse);
     });
 
+    test('solver uses at most two full-resolution encodes', () async {
+      final s = ResizeSettings()..setMode(ResizeMode.exactCrop);
+      s.setWidth(1200);
+      s.setHeight(1200);
+      s.setFormat(OutputFormat.jpeg);
+      s.setTargetKb(60);
+
+      await ResizeEngine.run(_makeJpeg(2400, 1600), s, name: 'b2.jpg');
+      expect(
+        ResizeEngine.lastSolveFullEncodes,
+        lessThanOrEqualTo(2),
+        reason: 'proxy search plus at most one correction, never a full binary search',
+      );
+    });
+
+    test('proxy solver agrees with the legacy solver', () async {
+      final prepared = img.copyResize(
+        img.decodeJpg(_makeJpeg(1600, 1000))!,
+        width: 800,
+        height: 500,
+        interpolation: img.Interpolation.average,
+      );
+      const budget = 80 * 1024;
+      final s = ResizeSettings()..setFormat(OutputFormat.jpeg);
+
+      final legacy = ResizeEngine.solveToBudgetLegacy(
+        prepared,
+        OutputFormat.jpeg,
+        s,
+        budget,
+        animated: false,
+      );
+      expect(legacy.bytes.length, lessThanOrEqualTo(budget));
+
+      final s2 = ResizeSettings()
+        ..setMode(ResizeMode.exactStretch)
+        ..setWidth(800)
+        ..setHeight(500)
+        ..setFormat(OutputFormat.jpeg)
+        ..setTargetKb(80);
+      final res = await ResizeEngine.run(_makeJpeg(1600, 1000), s2, name: 'cmp.jpg');
+      expect(res.metTarget, isTrue);
+      expect(res.bytes.length, lessThanOrEqualTo(budget));
+
+      final drift = (res.bytes.length - legacy.bytes.length).abs() / legacy.bytes.length;
+      expect(drift, lessThan(0.05),
+          reason: 'both solvers land just under the same budget, so they must agree closely');
+    });
+
     test('quality ordering: lower quality means fewer bytes', () async {
       final high = ResizeSettings()..setQuality(95);
       final low = ResizeSettings()..setQuality(20);

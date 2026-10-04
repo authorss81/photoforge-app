@@ -692,7 +692,100 @@ class ResizeEngine {
   }
 
   /// Binary-searches the best quality whose encoded size fits [budgetBytes].
+  ///
+  /// Solved on a ~512px proxy of frame zero, not on the full image. The old
+  /// code did seven to eight full-resolution encodes per file; this does the
+  /// search on a thumbnail and at most two full encodes. The single correcting
+  /// encode absorbs the proxy's estimation error. See [_solveToBudgetLegacy],
+  /// kept beside it so tests can compare the two.
+  static int lastSolveFullEncodes = 0;
+
   static EngineResult _solveToBudget(
+    img.Image im,
+    OutputFormat fmt,
+    ResizeSettings s,
+    int budgetBytes, {
+    required bool animated,
+    String? notice,
+  }) {
+    lastSolveFullEncodes = 0;
+    final minQ = fmt == OutputFormat.jpeg ? 25 : 10;
+    final maxQ = fmt == OutputFormat.jpeg ? 96 : 92;
+    final frameCount = animated ? im.numFrames : 1;
+
+    Uint8List fullEncode(int q) {
+      lastSolveFullEncodes++;
+      return _encode(im, fmt, s, quality: q, animated: animated);
+    }
+
+    EngineResult finish(Uint8List bytes, int q, bool met) => EngineResult(
+          bytes: bytes,
+          width: im.width,
+          height: im.height,
+          extension: fmt.extension!,
+          quality: q,
+          frames: frameCount,
+          metTarget: met,
+          notice: notice,
+        );
+
+    // Proxy: frame zero, longest edge around 512px. Byte count scales close to
+    // linearly with pixel count, so the budget scales by the pixel ratio and
+    // the frame count. Animation delta-frames compress better than stills, so
+    // this is an estimator, not a promise; the correcting encode absorbs it.
+    final src0 = _detachFrame(animated ? im.getFrame(0) : im);
+    final longest = math.max(src0.width, src0.height);
+    final img.Image proxy;
+    if (longest > 512) {
+      final k = 512 / longest;
+      proxy = img.copyResize(
+        src0,
+        width: (src0.width * k).round().clamp(1, src0.width),
+        height: (src0.height * k).round().clamp(1, src0.height),
+        interpolation: img.Interpolation.average,
+      );
+    } else {
+      proxy = src0;
+    }
+    final ratio = (proxy.width * proxy.height) /
+        math.max(1, im.width * im.height) /
+        math.max(1, frameCount);
+    final proxyBudget = math.max(64, (budgetBytes * ratio).round());
+
+    int proxySize(int q) =>
+        _encode(proxy, fmt, s, quality: q, animated: false).length;
+
+    if (proxySize(minQ) > proxyBudget) {
+      return finish(fullEncode(minQ), minQ, false);
+    }
+
+    var lo = minQ;
+    var hi = maxQ;
+    var bestQ = minQ;
+    while (lo <= hi) {
+      final mid = (lo + hi) ~/ 2;
+      if (proxySize(mid) <= proxyBudget) {
+        bestQ = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+
+    var bytes = fullEncode(bestQ);
+    if (bytes.length <= budgetBytes) {
+      return finish(bytes, bestQ, true);
+    }
+
+    final corrected = math.max(minQ, bestQ - 5).toInt();
+    bytes = fullEncode(corrected);
+    return finish(bytes, corrected, bytes.length <= budgetBytes);
+  }
+
+/// The pre-phase-04 solver: binary search with full-resolution encodes.
+/// Kept as the reference so tests can prove the proxy path agrees with it.
+/// Do not call from production code.
+  static EngineResult solveToBudgetLegacy(
     img.Image im,
     OutputFormat fmt,
     ResizeSettings s,
