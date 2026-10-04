@@ -664,7 +664,7 @@ void main() {
   });
 
   group('multi-output', () {
-    ResizeSettings _preset(OutputFormat f, int w, {int? kb}) {
+    ResizeSettings buildPreset(OutputFormat f, int w, {int? kb}) {
       final s = ResizeSettings()
         ..setMode(ResizeMode.width)
         ..setWidth(w)
@@ -679,9 +679,9 @@ void main() {
       final out = await ResizeEngine.runMulti(
         src,
         [
-          _preset(OutputFormat.jpeg, 400),
-          _preset(OutputFormat.png, 300),
-          _preset(OutputFormat.webp, 200),
+          buildPreset(OutputFormat.jpeg, 400),
+          buildPreset(OutputFormat.png, 300),
+          buildPreset(OutputFormat.webp, 200),
         ],
         name: 'm.jpg',
       );
@@ -700,8 +700,8 @@ void main() {
       final out = await ResizeEngine.runMulti(
         src,
         [
-          _preset(OutputFormat.jpeg, 800, kb: 40),
-          _preset(OutputFormat.jpeg, 400, kb: 12),
+          buildPreset(OutputFormat.jpeg, 800, kb: 40),
+          buildPreset(OutputFormat.jpeg, 400, kb: 12),
         ],
         name: 'm.jpg',
       );
@@ -810,6 +810,73 @@ void main() {
       } finally {
         pool.dispose();
       }
+    }, timeout: const Timeout(Duration(minutes: 2)));
+  });
+
+  group('cancellation', () {
+    ResizeController makeController() {
+      final c = ResizeController();
+      c.settings
+        ..setMode(ResizeMode.width)
+        ..setWidth(120)
+        ..setFormat(OutputFormat.jpeg);
+      return c;
+    }
+
+    List<({String name, Uint8List bytes, String? path})> makeFiles(int n) => [
+          for (var i = 0; i < n; i++)
+            (name: 'c$i.jpg', bytes: _makeJpeg(300, 200), path: null),
+        ];
+
+    test('a pre-cancelled token skips instead of failing', () async {
+      final job = ImageJob(id: 'x', name: 'x.jpg', bytes: _makeJpeg(300, 200));
+      final token = CancellationToken()..cancel();
+      final s = ResizeSettings()
+        ..setMode(ResizeMode.width)
+        ..setWidth(100)
+        ..setFormat(OutputFormat.jpeg);
+      final results = await processJob(job, s, cancellation: token);
+      expect(results, isEmpty);
+      expect(job.status, JobStatus.skipped);
+      expect(job.error, contains('Cancelled'));
+      expect(job.output, isNull);
+    });
+
+    test('cancelling mid-batch keeps finished work and skips the rest', () async {
+      final c = makeController();
+      c.addDroppedFiles(makeFiles(6));
+      var cancelled = false;
+      c.addListener(() {
+        if (!cancelled && c.doneCount >= 1) {
+          cancelled = true;
+          c.cancelBatch();
+        }
+      });
+      await c.runBatch();
+      expect(cancelled, isTrue);
+      for (final j in c.jobs) {
+        expect(j.status, isNot(JobStatus.running));
+        expect(j.status, isNot(JobStatus.queued));
+      }
+      expect(c.doneCount, greaterThanOrEqualTo(1));
+      expect(
+        c.jobs.where((j) => j.status == JobStatus.failed),
+        isEmpty,
+        reason: 'interruption is a skip, never a failure',
+      );
+      c.dispose();
+    }, timeout: const Timeout(Duration(minutes: 2)));
+
+    test('cancel is safe twice and after completion', () async {
+      final c = makeController();
+      c.addDroppedFiles(makeFiles(2));
+      await c.runBatch();
+      expect(c.doneCount, 2);
+      c.cancelBatch();
+      c.cancelBatch();
+      expect(c.doneCount, 2);
+      expect(c.busy, isFalse);
+      c.dispose();
     }, timeout: const Timeout(Duration(minutes: 2)));
   });
 

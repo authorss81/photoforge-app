@@ -392,17 +392,27 @@ class _QueueFooter extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: FilledButton.icon(
-                  onPressed: controller.busy || controller.pendingCount == 0
-                      ? null
-                      : controller.runBatch,
-                  icon: const Icon(Icons.play_arrow_rounded, size: 19),
-                  label: Text(
-                    controller.pendingCount == 0
-                        ? 'Process'
-                        : 'Process ${controller.pendingCount}',
-                  ),
-                ),
+                child: controller.busy
+                    ? FilledButton.icon(
+                        onPressed: controller.cancelBatch,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: theme.colorScheme.error,
+                          foregroundColor: theme.colorScheme.onError,
+                        ),
+                        icon: const Icon(Icons.stop_rounded, size: 19),
+                        label: const Text('Cancel'),
+                      )
+                    : FilledButton.icon(
+                        onPressed: controller.pendingCount == 0
+                            ? null
+                            : controller.runBatch,
+                        icon: const Icon(Icons.play_arrow_rounded, size: 19),
+                        label: Text(
+                          controller.pendingCount == 0
+                              ? 'Process'
+                              : 'Process ${controller.pendingCount}',
+                        ),
+                      ),
               ),
               const SizedBox(width: 8),
               Expanded(

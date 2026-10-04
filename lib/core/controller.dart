@@ -237,6 +237,7 @@ class ResizeController extends ChangeNotifier {
 
     final snapshot = settings.toJson();
     final runSettings = ResizeSettings()..loadFrom(snapshot);
+    _cancelToken = CancellationToken();
 
     try {
       // Split the batch so no chunk's estimated peak exceeds the budget. A
@@ -260,12 +261,21 @@ class ResizeController extends ChangeNotifier {
 
       var index = 0;
       for (final chunk in chunks) {
+        if (_cancelToken?.isCancelled ?? false) {
+          for (final job in chunk) {
+            if (job.status == JobStatus.queued) {
+              job.markSkipped('Cancelled.');
+            }
+          }
+          _changed();
+          break;
+        }
         if (WorkerPool.isSupported) {
           _pool ??= await WorkerPool.create();
-          await _runPooled(chunk, runSettings);
+          await _runPooled(chunk, runSettings, _cancelToken);
         } else {
           for (var i = 0; i < chunk.length; i++) {
-            await _runOne(chunk[i], runSettings);
+            await _runOne(chunk[i], runSettings, _cancelToken);
           }
         }
         index++;
@@ -274,9 +284,24 @@ class ResizeController extends ChangeNotifier {
         }
       }
     } finally {
+      if (_cancelToken?.isCancelled ?? false) {
+        for (final j in _jobs.where((j) => j.status == JobStatus.queued)) {
+          j.markSkipped('Cancelled.');
+        }
+      }
       _busy = false;
+      _cancelToken = null;
       _changed();
     }
+  }
+
+  CancellationToken? _cancelToken;
+
+  /// Stops the batch. Safe to call twice and safe to call after completion.
+  /// Jobs already running finish; everything still queued is skipped.
+  void cancelBatch() {
+    _cancelToken?.cancel();
+    _changed();
   }
 
   /// Writes every freshly completed job in the chunk, then releases its source
@@ -295,10 +320,18 @@ class ResizeController extends ChangeNotifier {
   }
 
   /// One job on the calling isolate. The web path and every test.
-  Future<void> _runOne(ImageJob job, ResizeSettings runSettings) async {
+  Future<void> _runOne(
+    ImageJob job,
+    ResizeSettings runSettings, [
+    CancellationToken? cancellation,
+  ]) async {
     job.markRunning(0.0);
     _changed();
-    final results = await processJob(job, runSettings);
+    final results = await processJob(
+      job,
+      runSettings,
+      cancellation: cancellation,
+    );
     _adoptExtraPages(job, results);
     _changed();
   }
@@ -307,14 +340,15 @@ class ResizeController extends ChangeNotifier {
   /// the shared reply port while the UI isolate stays responsive.
   Future<void> _runPooled(
     List<ImageJob> targets,
-    ResizeSettings runSettings,
-  ) async {
+    ResizeSettings runSettings, [
+    CancellationToken? cancellation,
+  ]) async {
     final pool = _pool!;
     final settingsJson = runSettings.toJson();
     var next = 0;
     await Future.wait([
       for (var w = 0; w < pool.size; w++)
-        _drain(pool, targets, settingsJson, () => next++),
+        _drain(pool, targets, settingsJson, () => next++, cancellation),
     ]);
   }
 
@@ -322,12 +356,19 @@ class ResizeController extends ChangeNotifier {
     WorkerPool pool,
     List<ImageJob> targets,
     Map<String, dynamic> settingsJson,
-    int Function() take,
-  ) async {
+    int Function() take, [
+    CancellationToken? cancellation,
+  ]) async {
     while (true) {
+      if (cancellation?.isCancelled ?? false) return;
       final i = take();
       if (i >= targets.length) return;
       final job = targets[i];
+      if (cancellation?.isCancelled ?? false) {
+        job.markSkipped('Cancelled.');
+        _changed();
+        continue;
+      }
       job.markRunning(0.0);
       _changed();
       final id = pool.nextId();

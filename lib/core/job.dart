@@ -2,6 +2,29 @@ import 'package:flutter/foundation.dart';
 
 enum JobStatus { queued, running, done, failed, skipped }
 
+/// Thrown inside the pipeline when cancellation is requested. Caught by
+/// [processJob] and reported as skipped, never as failed, because nothing
+/// went wrong.
+class JobCancelled implements Exception {
+  const JobCancelled();
+}
+
+/// Main-isolate cancellation. Checked at cheap points (after decode, between
+/// frames, before encode), never inside per-pixel loops. Cannot cross into a
+/// worker isolate, so pooled cancellation stops dispatch and lets in-flight
+/// workers finish; the direct path interrupts within one image.
+class CancellationToken {
+  bool _cancelled = false;
+
+  bool get isCancelled => _cancelled;
+
+  void cancel() => _cancelled = true;
+
+  void throwIfCancelled() {
+    if (_cancelled) throw const JobCancelled();
+  }
+}
+
 class ImageJob extends ChangeNotifier {
   ImageJob({
     required this.id,

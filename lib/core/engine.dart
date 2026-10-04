@@ -240,12 +240,14 @@ class ResizeEngine {
     ResizeSettings s, {
     String? name,
     void Function(double)? onProgress,
+    CancellationToken? cancellation,
   }) async {
     final results = await runAll(
       source,
       s,
       name: name,
       onProgress: onProgress,
+      cancellation: cancellation,
     );
     return results.first;
   }
@@ -257,6 +259,7 @@ class ResizeEngine {
     ResizeSettings s, {
     String? name,
     void Function(double)? onProgress,
+    CancellationToken? cancellation,
   }) async {
     void tick(double v) => onProgress?.call(v.clamp(0.0, 1.0));
 
@@ -264,6 +267,7 @@ class ResizeEngine {
 
     final decoded = _decodeOrThrow(source, name);
     lastWorkingChannels = 0;
+    cancellation?.throwIfCancelled();
 
     tick(0.10);
 
@@ -279,6 +283,7 @@ class ResizeEngine {
       outFormat,
       name: name,
       onProgress: onProgress,
+      cancellation: cancellation,
     );
   }
 
@@ -290,6 +295,7 @@ class ResizeEngine {
     OutputFormat outFormat, {
     String? name,
     void Function(double)? onProgress,
+    CancellationToken? cancellation,
   }) async {
     void tick(double v) => onProgress?.call(v.clamp(0.0, 1.0));
 
@@ -303,12 +309,14 @@ class ResizeEngine {
           outFormat,
           name: name,
           onProgress: onProgress,
+          cancellation: cancellation,
         )
       ];
     }
 
     final results = <EngineResult>[];
     for (var p = 0; p < decoded.numFrames; p++) {
+      cancellation?.throwIfCancelled();
       final page = _detachFrame(decoded.getFrame(p));
       results.add(
         await _runDecoded(
@@ -319,6 +327,7 @@ class ResizeEngine {
           pageIndex: p,
           pageCount: decoded.numFrames,
           onProgress: (v) => tick(0.10 + 0.90 * (p + v) / decoded.numFrames),
+          cancellation: cancellation,
         ),
       );
     }
@@ -334,6 +343,7 @@ class ResizeEngine {
     List<ResizeSettings> presets, {
     String? name,
     void Function(double)? onProgress,
+    CancellationToken? cancellation,
   }) async {
     if (presets.isEmpty) return const [];
     final decoded = _decodeOrThrow(source, name);
@@ -367,12 +377,14 @@ class ResizeEngine {
     int? pageIndex,
     int? pageCount,
     void Function(double)? onProgress,
+    CancellationToken? cancellation,
   }) async {
     void tick(double v) => onProgress?.call(v.clamp(0.0, 1.0));
 
     // Orientation, rotation and flips act on the whole animation, so they run
     // once over every frame at once instead of inside the per-frame transform.
     final oriented = _applySourceTransforms(decoded, s);
+    cancellation?.throwIfCancelled();
 
     tick(0.22);
 
@@ -391,6 +403,7 @@ class ResizeEngine {
     final total = inputs.length;
     final produced = <img.Image>[];
     for (var i = 0; i < total; i++) {
+      cancellation?.throwIfCancelled();
       final out = _applyToFrame(inputs[i], s, geometry, outFormat);
       out.frameDuration = inputs[i].frameDuration;
       produced.add(out);
@@ -404,6 +417,7 @@ class ResizeEngine {
     }
 
     final work = _assemble(produced, loopCount: oriented.loopCount);
+    cancellation?.throwIfCancelled();
     final notice = pageIndex != null && pageCount != null
         ? 'Page ${pageIndex + 1} of $pageCount.'
         : _animationNotice(
@@ -414,8 +428,7 @@ class ResizeEngine {
           );
 
     final budget = s.targetKb == null ? null : s.targetKb! * 1024;
-    if (budget != null && outFormat.supportsQuality) {
-      final solved = _solveToBudget(
+    if (budget != null && outFormat.supportsQuality) {      final solved = _solveToBudget(
         work,
         outFormat,
         s,
@@ -1125,7 +1138,11 @@ class ResizeEngine {
 }
 
 /// Runs one job through the engine and updates its state.
-Future<List<EngineResult>> processJob(ImageJob job, ResizeSettings settings) async {
+Future<List<EngineResult>> processJob(
+  ImageJob job,
+  ResizeSettings settings, {
+  CancellationToken? cancellation,
+}) async {
   job.markRunning(0.0);
   try {
     final results = await ResizeEngine.runAll(
@@ -1133,6 +1150,7 @@ Future<List<EngineResult>> processJob(ImageJob job, ResizeSettings settings) asy
       settings,
       name: job.name,
       onProgress: job.markRunning,
+      cancellation: cancellation,
     );
     final res = results.first;
     job.markDone(
@@ -1144,6 +1162,8 @@ Future<List<EngineResult>> processJob(ImageJob job, ResizeSettings settings) asy
       notice: res.notice,
     );
     return results;
+  } on JobCancelled {
+    job.markSkipped('Cancelled.');
   } on EngineError catch (e) {
     job.markFailed(e.message);
   } catch (e) {
