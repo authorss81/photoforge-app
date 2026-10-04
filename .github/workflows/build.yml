@@ -351,13 +351,18 @@ jobs:
             -no-metrics
             -accel on
           script: |
+            set -euo pipefail
             cd "$GITHUB_WORKSPACE"
             flutter --version
             flutter pub get
             # integration_test drives the real app on a real device; a widget
             # test cannot, because it never launches the platform.
-            flutter test integration_test/app_test.dart \
-              --dart-define=PIXELFORGE_SMOKE=1
+            #
+            # On one line deliberately. A backslash continuation inside a YAML
+            # block scalar reaches the shell with the backslash intact, and the
+            # script exits 1 with no output at all, which is exactly what the
+            # previous run did.
+            flutter test integration_test/app_test.dart --dart-define=PIXELFORGE_SMOKE=1
 
       - uses: actions/upload-artifact@v4
         if: failure()
