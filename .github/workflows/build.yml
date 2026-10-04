@@ -351,7 +351,11 @@ jobs:
             -no-metrics
             -accel on
           script: |
-            set -euo pipefail
+            # Deliberately not `set -euo pipefail`: this script runs under
+            # /usr/bin/sh, which is dash on Ubuntu, and dash rejects pipefail
+            # with "Illegal option". `set -eu` is portable and sufficient; there
+            # are no pipelines here whose failure would otherwise pass.
+            set -eu
             cd "$GITHUB_WORKSPACE"
             flutter --version
             flutter pub get
