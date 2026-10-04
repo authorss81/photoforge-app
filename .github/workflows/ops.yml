@@ -57,7 +57,13 @@ permissions:
   # .github/workflows/** is rejected with "refusing to allow a GitHub App to
   # create or update workflow ... without workflows permission", which is how
   # phase-02 lost its work five times over.
-  workflows: write
+  #
+  # The scope is `actions`, not `workflows`. There is no `workflows` key in
+  # GITHUB_TOKEN's permission set; `workflows` is an OAuth/GitHub App scope, not
+  # a GITHUB_TOKEN one. Naming it here made GitHub reject the whole file, so
+  # the workflow failed to create a single job on every push and the loop was
+  # silently dead. Verified with actionlint.
+  actions: write
 
 concurrency:
   group: ops-pipeline
