@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -17,6 +18,7 @@ import 'package:pixelforge/core/settings.dart';
 import 'package:pixelforge/core/background_service.dart';
 import 'package:pixelforge/core/shared_content.dart';
 import 'package:pixelforge/core/worker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 Uint8List _makeJpeg(int w, int h, {int quality = 92}) {
   final im = img.Image(width: w, height: h, numChannels: 3);
@@ -115,6 +117,12 @@ ResizeSettings _webpSettings({int width = 60}) => ResizeSettings()
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  // Settings autosave, so constructing a ResizeSettings schedules a write
+  // 400ms later. Without a mock the plugin channel is unimplemented and the
+  // pending timer reports MissingPluginException against whichever test happens
+  // to be running. The mock is what makes autosave testable at all.
+  SharedPreferences.setMockInitialValues({});
 
   group('geometry', () {
     test('longestSide fits inside the box without growing', () {
@@ -2118,6 +2126,130 @@ void main() {
       a.setPreserveAnimation(false);
       final b = ResizeSettings()..loadFrom(a.toJson());
       expect(b.preserveAnimation, isFalse);
+    });
+
+    // Autosave. The contract is that settings persist with no explicit save
+    // action at all, so these tests deliberately never call save().
+    group('autosave', () {
+      test('a change reaches storage on its own', () async {
+        SharedPreferences.setMockInitialValues({});
+        final s = ResizeSettings();
+        expect(s.hasPendingSave, isFalse);
+
+        s.setWidth(1234);
+        expect(
+          s.hasPendingSave,
+          isTrue,
+          reason: 'a change must schedule a write immediately',
+        );
+
+        await Future<void>.delayed(ResizeSettings.saveDebounce * 2);
+        expect(s.hasPendingSave, isFalse);
+
+        final prefs = await SharedPreferences.getInstance();
+        final raw = prefs.getString('pixelforge.settings.v1');
+        expect(raw, isNotNull, reason: 'nothing was written');
+        expect(
+          (jsonDecode(raw!) as Map<String, dynamic>)['w'],
+          1234,
+          reason: 'the stored value must be the change, not the defaults',
+        );
+      });
+
+      test('a slider drag coalesces into a single write', () async {
+        SharedPreferences.setMockInitialValues({});
+        final s = ResizeSettings();
+        var confirmations = 0;
+        s.addListener(() {
+          // A confirmation is a notification with no write pending, which is
+          // how the UI knows a save landed.
+          if (!s.hasPendingSave) confirmations++;
+        });
+
+        // Changes with no await between them, so all 41 land in the same
+        // millisecond and the debounce cannot expire mid-loop. Sleeping
+        // between them instead would make this test depend on timer
+        // resolution: 41 sleeps of 5ms is ~615ms of real time on Windows,
+        // which overruns the 400ms window and produces two writes for a
+        // reason that has nothing to do with the code under test.
+        for (var w = 100; w <= 140; w++) {
+          s.setWidth(w);
+        }
+        await Future<void>.delayed(ResizeSettings.saveDebounce * 2);
+
+        expect(
+          confirmations,
+          1,
+          reason: '41 changes inside one debounce window must cost one write',
+        );
+
+        final prefs = await SharedPreferences.getInstance();
+        final raw = prefs.getString('pixelforge.settings.v1');
+        expect(
+          (jsonDecode(raw!) as Map<String, dynamic>)['w'],
+          140,
+          reason: 'the single write must hold the final value, not the first',
+        );
+      });
+
+      test('the saved generation advances once per persisted write', () async {
+        SharedPreferences.setMockInitialValues({});
+        final s = ResizeSettings();
+        final before = s.savedGeneration;
+
+        s.setHeight(999);
+        await Future<void>.delayed(ResizeSettings.saveDebounce * 2);
+
+        expect(
+          s.savedGeneration,
+          greaterThan(before),
+          reason: 'the UI needs a signal that the write happened',
+        );
+      });
+
+      test('a fresh instance reads back what autosave stored', () async {
+        SharedPreferences.setMockInitialValues({});
+        ResizeSettings().setNameTemplate('autosaved_{w}');
+        await Future<void>.delayed(ResizeSettings.saveDebounce * 2);
+
+        final reloaded = ResizeSettings();
+        await reloaded.load();
+        expect(
+          reloaded.nameTemplate,
+          'autosaved_{w}',
+          reason: 'settings must survive a restart with no save button',
+        );
+      });
+
+      test('saving does not leak into unrelated instances', () async {
+        SharedPreferences.setMockInitialValues({});
+        ResizeSettings().setWidth(400);
+        await Future<void>.delayed(ResizeSettings.saveDebounce * 2);
+
+        // _memoryCache is process-wide. If save() fed it, this would inherit
+        // width 400, which is exactly the contamination autosave introduced.
+        final b = ResizeSettings();
+        expect(
+          b.width,
+          isNot(400),
+          reason:
+              'a new instance must start from loaded state, not from '
+              'whatever another instance last wrote',
+        );
+      });
+
+      test('load does not schedule a write', () async {
+        SharedPreferences.setMockInitialValues({});
+        final s = ResizeSettings();
+        await s.load();
+        expect(
+          s.hasPendingSave,
+          isFalse,
+          reason:
+              'a load is not an edit; writing on load would mark every '
+              'launch as dirty',
+        );
+      });
     });
   });
 }

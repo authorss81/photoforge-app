@@ -158,18 +158,13 @@ class _HomePageState extends State<HomePage> {
           onPressed: controller.busy ? null : _addFiles,
           icon: const Icon(Icons.add_photo_alternate_outlined),
         ),
-        IconButton(
-          tooltip: AppLocalizations.of(context).saveSettings,
-          onPressed: () {
-            controller.settings.save();
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(AppLocalizations.of(context).settingsSaved),
-                duration: const Duration(seconds: 1),
-              ),
-            );
-          },
-          icon: const Icon(Icons.save_outlined),
+        // No save button. Settings autosave on a 400ms debounce, so a button
+        // would imply unsaved work that cannot exist, and a user who closes the
+        // app immediately after a change would reasonably expect it kept. The
+        // confirmation appears on its own once the write lands.
+        _SavedIndicator(
+          generation: controller.settings.savedGeneration,
+          label: AppLocalizations.of(context).settingsSaved,
         ),
         const SizedBox(width: 4),
       ],
@@ -676,6 +671,74 @@ class _Stat extends StatelessWidget {
             style: theme.textTheme.bodyMedium?.copyWith(
               fontWeight: FontWeight.w700,
               color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Briefly confirms that settings reached disk.
+///
+/// Driven by `savedGeneration`, which the settings object bumps after each
+/// successful write. Keying off that rather than off a local flag means the
+/// indicator cannot get out of step with what was actually persisted, and it
+/// stays hidden when nothing has changed recently instead of lingering.
+class _SavedIndicator extends StatefulWidget {
+  const _SavedIndicator({required this.generation, required this.label});
+
+  final int generation;
+  final String label;
+
+  @override
+  State<_SavedIndicator> createState() => _SavedIndicatorState();
+}
+
+class _SavedIndicatorState extends State<_SavedIndicator> {
+  bool _visible = false;
+  Timer? _hide;
+
+  @override
+  void didUpdateWidget(_SavedIndicator old) {
+    super.didUpdateWidget(old);
+    if (widget.generation == old.generation) return;
+    _show();
+  }
+
+  void _show() {
+    _hide?.cancel();
+    setState(() => _visible = true);
+    _hide = Timer(const Duration(milliseconds: 1600), () {
+      if (mounted) setState(() => _visible = false);
+    });
+  }
+
+  @override
+  void dispose() {
+    _hide?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AnimatedOpacity(
+      opacity: _visible ? 1 : 0,
+      duration: const Duration(milliseconds: 180),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.check_circle_outline,
+            size: 15,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 5),
+          Text(
+            widget.label,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
         ],

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -205,7 +206,67 @@ class ResizeSettings extends ChangeNotifier {
     _hydrateFrom(_memoryCache);
   }
 
+  /// Last snapshot read from disk, used to seed a newly constructed instance so
+  /// the UI does not flash defaults before [load] finishes.
+  ///
+  /// Deliberately written by [load] only, never by [save]. This is shared process
+  /// state, so a save feeding it would make every later `ResizeSettings()`
+  /// inherit whatever was written last. That was invisible while saves were
+  /// explicit and rare; with autosave on every settings change it leaked across
+  /// instances, and a test that resized to 400px silently changed the width of
+  /// every unrelated ResizeSettings() created after it. Settings that need a
+  /// known baseline must say so with [loadFrom].
   static Map<String, dynamic>? _memoryCache;
+
+  /// How long to wait after the last change before writing to disk.
+  ///
+  /// Long enough to coalesce a slider drag into one write, short enough that
+  /// closing the app a moment after a change still keeps it.
+  static const Duration saveDebounce = Duration(milliseconds: 400);
+
+  Timer? _saveTimer;
+
+  /// Bumped on every save that reaches storage, so the UI can show that the
+  /// change persisted without needing a save button. Monotonic rather than a
+  /// timestamp so a test can compare it.
+  int _savedGeneration = 0;
+  int get savedGeneration => _savedGeneration;
+
+  /// True while a change is waiting to be written.
+  bool get hasPendingSave => _saveTimer?.isActive ?? false;
+
+  /// Every settings change notifies listeners and schedules a debounced save.
+  ///
+  /// Overridden rather than calling a helper from all 47 setters: there is one
+  /// place where "the settings changed" is true, so there is one place where
+  /// autosave has to be right. A setter that forgot to schedule a save is
+  /// exactly the bug this avoids.
+  @override
+  void notifyListeners() {
+    // Schedule before notifying, so a listener that checks hasPendingSave sees
+    // the truth. Notifying first would report "no pending save" for the change
+    // that just scheduled one.
+    _scheduleSave();
+    super.notifyListeners();
+  }
+
+  void _scheduleSave() {
+    _saveTimer?.cancel();
+    _saveTimer = Timer(saveDebounce, () async {
+      await save();
+      // Let the UI show the confirmation without rebuilding the world.
+      _savedGeneration++;
+      super.notifyListeners();
+    });
+  }
+
+  /// Writes immediately, cancelling any pending debounce. Used by tests and by
+  /// anything that must not lose the change, such as app shutdown.
+  @override
+  void dispose() {
+    _saveTimer?.cancel();
+    super.dispose();
+  }
 
   // --- Geometry ---------------------------------------------------------
   ResizeMode _mode = ResizeMode.longestSide;
@@ -822,14 +883,15 @@ class ResizeSettings extends ChangeNotifier {
       return;
     }
     _hydrateFrom(_memoryCache);
-    notifyListeners();
+    // Notify directly: a load is not a user edit, so it must not schedule a
+    // write. Writing on load would mark the settings dirty every launch.
+    super.notifyListeners();
   }
 
   Future<void> save() async {
     try {
-      _memoryCache = toJson();
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_storeKey, jsonEncode(_memoryCache));
+      await prefs.setString(_storeKey, jsonEncode(toJson()));
     } catch (_) {
       // persistence is best-effort; never block the pipeline on it
     }
