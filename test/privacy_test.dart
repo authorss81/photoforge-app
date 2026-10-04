@@ -18,12 +18,24 @@ void main() {
       expect(mainManifest.existsSync(), isTrue);
     });
 
-    test('requests zero permissions', () {
+    test('requests only the documented permissions', () {
+      // Exactly one permission is allowed, and this test names it: the
+      // foreground-service type permission, which is install-time, grants no
+      // data access of any kind, and exists only so Android 14+ lets the
+      // batch service run with a visible notification. INTERNET or any
+      // storage, camera, location or microphone permission fails this test.
+      const allowed = {
+        'android.permission.FOREGROUND_SERVICE_DATA_SYNC',
+      };
       final xml = _withoutXmlComments(mainManifest.readAsStringSync());
       final requested = RegExp(
         r'<uses-permission[^>]*android:name\s*=\s*"([^"]+)"',
-      ).allMatches(xml).map((m) => m.group(1)).toList();
-      expect(requested, isEmpty, reason: 'unexpected permissions: $requested');
+      ).allMatches(xml).map((m) => m.group(1)!).toSet();
+      expect(
+        requested.difference(allowed),
+        isEmpty,
+        reason: 'unexpected permissions: $requested',
+      );
     });
 
     test('has no INTERNET permission anywhere in the release source set', () {

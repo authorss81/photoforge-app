@@ -81,5 +81,9 @@
 	</array>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>PixelForge saves resized images to your photo library. It never reads your library; the system picker hands it only the photos you choose.</string>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>dev.pixelforge.pixelforge.batch</string>
+	</array>
 </dict>
 </plist>

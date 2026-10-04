@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import 'background_service.dart';
 import 'engine.dart';
 import 'job.dart';
 import 'native_decoder.dart';
@@ -244,6 +245,20 @@ class ResizeController extends ChangeNotifier {
     final runSettings = ResizeSettings()..loadFrom(snapshot);
     _cancelToken = CancellationToken();
 
+    // A foreground service for batches worth keeping alive: more than a
+    // couple of files, or enough bytes that backgrounding mid-batch is
+    // plausible. A single quick image does not need one.
+    final totalInput = targets.fold<int>(0, (a, j) => a + j.inputBytes);
+    final useService =
+        BackgroundService.isSupported &&
+        (targets.length > 2 || totalInput > 10 * 1024 * 1024);
+    if (useService) {
+      await BackgroundService.start(
+        targets.length,
+        onCancel: cancelBatch,
+      );
+    }
+
     try {
       // Split the batch so no chunk's estimated peak exceeds the budget. A
       // single oversized job still runs alone; refusing it would be hostile
@@ -303,8 +318,15 @@ class ResizeController extends ChangeNotifier {
         if (runSettings.writeImmediately) {
           await _writeChunkNow(chunk, index);
         }
+        if (useService) {
+          await BackgroundService.progress(
+            targets.where((j) => j.status == JobStatus.done).length,
+            targets.length,
+          );
+        }
       }
     } finally {
+      if (useService) await BackgroundService.stop();
       if (_cancelToken?.isCancelled ?? false) {
         for (final j in _jobs.where((j) => j.status == JobStatus.queued)) {
           j.markSkipped('Cancelled.');

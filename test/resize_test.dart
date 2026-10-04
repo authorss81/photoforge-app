@@ -13,6 +13,7 @@ import 'package:pixelforge/core/native/libheif.dart';
 import 'package:pixelforge/core/tiff16.dart';
 import 'package:pixelforge/core/resize_mode.dart';
 import 'package:pixelforge/core/settings.dart';
+import 'package:pixelforge/core/background_service.dart';
 import 'package:pixelforge/core/shared_content.dart';
 import 'package:pixelforge/core/worker.dart';
 
@@ -1303,6 +1304,69 @@ void main() {
       },
       timeout: const Timeout(Duration(minutes: 2)),
     );
+  });
+
+  group('background', () {
+    test('start, progress and stop cross the channel', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      final calls = <String>[];
+      try {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(BackgroundService.channel, (call) async {
+          calls.add(call.method);
+          return null;
+        });
+        await BackgroundService.start(4, onCancel: () {});
+        await BackgroundService.progress(2, 4);
+        await BackgroundService.stop();
+        expect(calls, ['start', 'progress', 'stop']);
+      } finally {
+        BackgroundService.resetForTest();
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(BackgroundService.channel, null);
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
+    test('a refusing device never fails the batch', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      try {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(BackgroundService.channel, (call) async {
+          throw PlatformException(code: 'DENIED');
+        });
+        await BackgroundService.start(4, onCancel: () {});
+        await BackgroundService.progress(1, 4);
+        await BackgroundService.stop();
+      } finally {
+        BackgroundService.resetForTest();
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(BackgroundService.channel, null);
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
+    test('unsupported platforms are a silent no-op', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      try {
+        var called = false;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(BackgroundService.channel, (call) async {
+          called = true;
+          return null;
+        });
+        expect(BackgroundService.isSupported, isFalse);
+        await BackgroundService.start(4, onCancel: () {});
+        await BackgroundService.progress(1, 4);
+        await BackgroundService.stop();
+        expect(called, isFalse);
+      } finally {
+        BackgroundService.resetForTest();
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(BackgroundService.channel, null);
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
   });
 
   group('streaming', () {

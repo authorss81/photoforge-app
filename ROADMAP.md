@@ -94,7 +94,7 @@ Android and Windows. Known gaps in v1 are listed in the README.
 
 - [ ] **HEIC / HEIF / AVIF decoding** — the largest single gap.
   - [ ] Android: `ImageDecoder` via method channel (API 28+, no extra
-        dependency, still zero permissions)
+        dependency, still no data-access permission)
   - [ ] iOS: `ImageIO` / `CoreImage` via method channel
   - [ ] Desktop: `libheif` + `libavif` through FFI
 - [ ] **Prefer native decoders for every format** — typically 3–10x faster than

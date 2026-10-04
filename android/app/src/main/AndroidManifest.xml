@@ -1,13 +1,21 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!--
-      PixelForge declares no permissions at all in its release manifest.
+      PixelForge declares almost no permissions.
 
       In particular there is no android.permission.INTERNET, which means the
-      installed APK physically cannot open a socket. This is the privacy claim:
-      your photos cannot be uploaded because the app has no way to do it. Keep it
-      that way. Only src/debug and src/profile add INTERNET, which they need for
-      hot reload and is not present in a release build.
+      installed APK physically cannot open a socket. That is the privacy claim:
+      your photos cannot be uploaded because the app has no way to do it.
+
+      The single exception is FOREGROUND_SERVICE_DATA_SYNC, a normal
+      install-time permission that grants no data access of any kind. It exists
+      only so Android 14+ lets the batch service run while the app is
+      backgrounded, with a visible progress notification. Remove it and long
+      batches die when the app is backgrounded; nothing else changes.
+
+      Only src/debug and src/profile add INTERNET, which they need for hot
+      reload and is not present in a release build.
     -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
     <application
         android:label="PixelForge"
         android:name="${applicationName}"
@@ -54,6 +62,10 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <service
+            android:name=".BatchService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

@@ -1,7 +1,7 @@
 # PixelForge
 
 Batch image resizer, compressor and format converter for Windows, Android, iOS and the web.
-Runs entirely offline: **the Android release manifest requests no permissions at all, so
+Runs entirely offline: **the Android release manifest requests nothing that can reach the network, so
 the app has no way to open a socket.** That is enforced by a test, not just a promise.
 
 Built with Flutter + a pure-Dart image pipeline (`package:image`). No Rust FFI, no native
@@ -158,7 +158,7 @@ are picked up automatically.
 phase is done, so the release build is always last — and if the audit appends
 more work, the terminal phase is pushed back to the end rather than firing
 prematurely. `phase-32` builds the release APK, split-ABI APKs, the Play bundle
-and the Windows zip, verifies the APK really requests zero permissions, and
+and the Windows zip, verifies the APK requests nothing beyond the documented allowlist, and
 attaches everything to a **draft** release. Its number is reserved: the audit is
 instructed to start at 33.
 

@@ -19,6 +19,7 @@ import java.nio.ByteBuffer
 
 class MainActivity : FlutterActivity() {
     private var photoPickerResult: MethodChannel.Result? = null
+    private var backgroundChannel: MethodChannel? = null
 
     /// URIs shared into the app that Dart has not collected yet.
     private val pendingShared = mutableListOf<Uri>()
@@ -63,10 +64,76 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         collectSharedIntent(intent)
+        handleCancelExtra(intent)
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "dev.pixelforge/native_decoder",
         ).setMethodCallHandler { call, result ->
+            if (call.method == "decodeImage") {
+                val bytes = call.argument<ByteArray>("bytes")
+                if (bytes == null) {
+                    result.error("ARG", "missing image bytes", null)
+                    return@setMethodCallHandler
+                }
+                try {
+                    result.success(decodeToPng(bytes))
+                } catch (e: Exception) {
+                    result.error("DECODE", e.message, null)
+                }
+            } else {
+                result.notImplemented()
+            }
+        }
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "dev.pixelforge/background",
+        ).also { backgroundChannel = it }
+            .setMethodCallHandler { call, result ->
+            when (call.method) {
+                "start" -> {
+                    val total = call.argument<Int>("total") ?: 1
+                    val intent = Intent(this, BatchService::class.java).apply {
+                        putExtra(
+                            BatchService.EXTRA_COMMAND,
+                            BatchService.COMMAND_PROGRESS,
+                        )
+                        putExtra(BatchService.EXTRA_DONE, 0)
+                        putExtra(BatchService.EXTRA_TOTAL, total)
+                    }
+                    if (Build.VERSION.SDK_INT >= 26) {
+                        startForegroundService(intent)
+                    } else {
+                        startService(intent)
+                    }
+                    result.success(null)
+                }
+                "progress" -> {
+                    val done = call.argument<Int>("done") ?: 0
+                    val total = call.argument<Int>("total") ?: 1
+                    val intent = Intent(this, BatchService::class.java).apply {
+                        putExtra(
+                            BatchService.EXTRA_COMMAND,
+                            BatchService.COMMAND_PROGRESS,
+                        )
+                        putExtra(BatchService.EXTRA_DONE, done)
+                        putExtra(BatchService.EXTRA_TOTAL, total)
+                    }
+                    startService(intent)
+                    result.success(null)
+                }
+                "stop" -> {
+                    val intent = Intent(this, BatchService::class.java).apply {
+                        putExtra(
+                            BatchService.EXTRA_COMMAND,
+                            BatchService.COMMAND_STOP,
+                        )
+                    }
+                    startService(intent)
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
             if (call.method == "decodeImage") {
                 val bytes = call.argument<ByteArray>("bytes")
                 if (bytes == null) {
@@ -153,6 +220,21 @@ class MainActivity : FlutterActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         collectSharedIntent(intent)
+        handleCancelExtra(intent)
+    }
+
+    /// The notification's cancel action reopens this activity with an extra
+    /// instead of talking to Dart from a receiver, which cannot reach the
+    /// Flutter engine cleanly. Dart listens for the onCancel call below.
+    private fun handleCancelExtra(intent: Intent?) {
+        if (intent?.getBooleanExtra(EXTRA_CANCEL_BATCH, false) == true) {
+            intent.removeExtra(EXTRA_CANCEL_BATCH)
+            backgroundChannel?.invokeMethod("onCancel", null)
+        }
+    }
+
+    companion object {
+        const val EXTRA_CANCEL_BATCH = "pixelforge_cancel_batch"
     }
 
     /// Stashes shared image URIs for Dart to collect. Reading happens lazily

@@ -14,11 +14,14 @@ Android, iOS and web from one codebase.
 These are enforced by tests and CI. If you cannot satisfy one, stop and report.
 Do not work around it.
 
-1. **Zero permissions.** `android/app/src/main/AndroidManifest.xml` must request
-   no permissions at all. In particular never add `android.permission.INTERNET`.
-   The release APK physically cannot open a socket, and that is the product's
-   central claim. `test/privacy_test.dart` checks this and so does the `android`
-   CI job, which dumps the built APK's permission list and fails on INTERNET.
+1. **Almost zero permissions.** `android/app/src/main/AndroidManifest.xml` must
+   request nothing except `FOREGROUND_SERVICE_DATA_SYNC`, a normal
+   install-time permission that grants no data access of any kind. In
+   particular never add `android.permission.INTERNET`. The release APK
+   physically cannot open a socket, and that is the product's central claim.
+   `test/privacy_test.dart` enforces the exact allowlist, and so does the
+   `android` CI job, which dumps the built APK's permission list and fails on
+   INTERNET.
 
 2. **No network code.** No HTTP client, no socket, no analytics, no crash
    reporting service, no font or asset fetched at runtime. Every dependency must
