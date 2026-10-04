@@ -1,9 +1,12 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart' show Color;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
+import 'package:pixelforge/core/controller.dart';
 import 'package:pixelforge/core/engine.dart';
+import 'package:pixelforge/core/job.dart';
 import 'package:pixelforge/core/tiff16.dart';
 import 'package:pixelforge/core/resize_mode.dart';
 import 'package:pixelforge/core/settings.dart';
@@ -661,7 +664,7 @@ void main() {
   });
 
   group('isolates', () {
-    ResizeSettings _sized() {
+    ResizeSettings sizedSettings() {
       final s = ResizeSettings()
         ..setMode(ResizeMode.width)
         ..setWidth(200)
@@ -673,13 +676,13 @@ void main() {
       final pool = await WorkerPool.create(size: 1);
       try {
         final src = _makeJpeg(600, 400);
-        final direct = await ResizeEngine.run(src, _sized(), name: 'w.jpg');
+        final direct = await ResizeEngine.run(src, sizedSettings(), name: 'w.jpg');
 
         var sawProgress = false;
         final maps = await pool.run(
           IsolateMessage(
             id: pool.nextId(),
-            settingsJson: _sized().toJson(),
+            settingsJson: sizedSettings().toJson(),
             source: src,
             name: 'w.jpg',
           ),
@@ -701,7 +704,7 @@ void main() {
       try {
         final good = _makeJpeg(300, 200);
         final bad = Uint8List.fromList(List.filled(64, 7));
-        final json = _sized().toJson();
+        final json = sizedSettings().toJson();
 
         EngineResult? okResult;
         Object? badError;
@@ -737,7 +740,7 @@ void main() {
       try {
         expect(pool.size, 2);
         expect(pool.busyCount, 0);
-        final json = _sized().toJson();
+        final json = sizedSettings().toJson();
         final src = _makeJpeg(200, 150);
         final f1 = pool.run(IsolateMessage(id: pool.nextId(), settingsJson: json, source: src, name: 'a.jpg'));
         final f2 = pool.run(IsolateMessage(id: pool.nextId(), settingsJson: json, source: src, name: 'b.jpg'));
@@ -748,6 +751,95 @@ void main() {
         pool.dispose();
       }
     }, timeout: const Timeout(Duration(minutes: 2)));
+  });
+
+  group('streaming', () {
+    ResizeController makeController() {
+      final c = ResizeController();
+      c.settings
+        ..setMode(ResizeMode.width)
+        ..setWidth(120)
+        ..setFormat(OutputFormat.jpeg);
+      return c;
+    }
+
+    List<({String name, Uint8List bytes, String? path})> makeFiles(int n) => [
+          for (var i = 0; i < n; i++)
+            (name: 's$i.jpg', bytes: _makeJpeg(300, 200), path: null),
+        ];
+
+    test('a released source keeps its thumbnail', () {
+      final job = ImageJob(id: 't', name: 't.jpg', bytes: _makeJpeg(100, 80));
+      expect(job.hasSource, isTrue);
+      job.setThumbnail(Uint8List.fromList([1, 2, 3]));
+      job.releaseSource();
+      expect(job.hasSource, isFalse);
+      expect(job.thumbnail, isNotNull);
+      expect(job.inputBytes, 0);
+    });
+
+    test('saveAll releases sources once written', () async {
+      final c = makeController();
+      final dir = await Directory.systemTemp.createTemp('pf-save');
+      try {
+        c.settings.setOutputDirectory(dir.path);
+        c.addDroppedFiles(makeFiles(2));
+        await c.runBatch();
+        expect(c.doneCount, 2);
+        final written = await c.saveAll();
+        expect(written, 2);
+        for (final j in c.jobs) {
+          expect(j.hasSource, isFalse);
+          expect(j.output, isNotNull);
+        }
+        expect(dir.listSync(), hasLength(2));
+      } finally {
+        await dir.delete(recursive: true);
+        c.dispose();
+      }
+    }, timeout: const Timeout(Duration(minutes: 2)));
+
+    test('write-immediately streams each file and frees its source', () async {
+      final c = makeController();
+      final dir = await Directory.systemTemp.createTemp('pf-now');
+      try {
+        c.settings
+          ..setOutputDirectory(dir.path)
+          ..setWriteImmediately(true);
+        c.addDroppedFiles(makeFiles(3));
+        await c.runBatch();
+        expect(c.doneCount, 3);
+        expect(dir.listSync(), hasLength(3));
+        for (final j in c.jobs) {
+          expect(j.hasSource, isFalse,
+              reason: 'streamed jobs must not retain their inputs');
+        }
+      } finally {
+        await dir.delete(recursive: true);
+        c.dispose();
+      }
+    }, timeout: const Timeout(Duration(minutes: 2)));
+
+    test('an oversized batch is chunked, not refused', () async {
+      final c = makeController();
+      // 64 MB budget with ~1 MB inputs forces several chunks.
+      c.settings.setMemoryBudgetMb(64);
+      c.addDroppedFiles(makeFiles(4));
+      await c.runBatch();
+      expect(c.doneCount, 4);
+      c.dispose();
+    }, timeout: const Timeout(Duration(minutes: 2)));
+
+    test('a job without a source is skipped with a reason', () async {
+      final c = makeController();
+      c.addDroppedFiles(makeFiles(1));
+      final job = c.jobs.first;
+      job.releaseSource();
+      await c.runBatch();
+      expect(job.status, JobStatus.skipped);
+      expect(job.error, contains('re-add'));
+      c.dispose();
+    });
   });
 
   group('memory', () {

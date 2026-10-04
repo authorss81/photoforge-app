@@ -6,14 +6,37 @@ class ImageJob extends ChangeNotifier {
   ImageJob({
     required this.id,
     required this.name,
-    required this.bytes,
+    required Uint8List bytes,
     this.path,
-  });
+  }) : _source = bytes;
 
   final String id;
   final String name;
-  final Uint8List bytes;
+  Uint8List? _source;
   final String? path;
+
+  /// The original file bytes. Null once released to bound peak memory.
+  /// Check [hasSource] before touching [bytes].
+  Uint8List get bytes => _source!;
+  bool get hasSource => _source != null;
+
+  Uint8List? _thumbnail;
+
+  /// A small preview that survives [releaseSource], so a written job still
+  /// shows in the queue after its megabytes are gone.
+  Uint8List? get thumbnail => _thumbnail;
+  void setThumbnail(Uint8List bytes) {
+    _thumbnail = bytes;
+    notifyListeners();
+  }
+
+  /// Drops the source bytes. Only safe once the output is written, because a
+  /// re-run needs the source back and it is gone.
+  void releaseSource() {
+    if (_source == null) return;
+    _source = null;
+    notifyListeners();
+  }
 
   JobStatus _status = JobStatus.queued;
   Uint8List? _output;
@@ -44,13 +67,14 @@ class ImageJob extends ChangeNotifier {
   int get outFrames => _outFrames;
   double get progress => _progress;
 
-  int get inputBytes => bytes.length;
+  int get inputBytes => _source?.length ?? 0;
   int? get outputBytes => _output?.length;
 
   double? get savedRatio {
     final o = _output?.length;
-    if (o == null || bytes.isEmpty) return null;
-    return 1 - (o / bytes.length);
+    final s = _source?.length;
+    if (o == null || s == null || s == 0) return null;
+    return 1 - (o / s);
   }
 
   String get sourceSizeLabel {

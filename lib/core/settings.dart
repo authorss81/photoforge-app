@@ -253,6 +253,8 @@ class ResizeSettings extends ChangeNotifier {
   String _outputDirectory = '';
   bool _overwrite = false;
   bool _keepExtensionWhenKeepFormat = true;
+  bool _writeImmediately = false;
+  int _memoryBudgetMb = 512;
 
   static const _templateTokens = <String>[
     '{name}',
@@ -308,6 +310,8 @@ class ResizeSettings extends ChangeNotifier {
   String get nameTemplate => _nameTemplate;
   String get outputDirectory => _outputDirectory;
   bool get overwrite => _overwrite;
+  bool get writeImmediately => _writeImmediately;
+  int get memoryBudgetMb => _memoryBudgetMb;
   bool get keepExtensionWhenKeepFormat => _keepExtensionWhenKeepFormat;
 
   ResizeSpec get spec => ResizeSpec(
@@ -577,6 +581,19 @@ class ResizeSettings extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setWriteImmediately(bool v) {
+    if (v == _writeImmediately) return;
+    _writeImmediately = v;
+    notifyListeners();
+  }
+
+  void setMemoryBudgetMb(int v) {
+    final c = v.clamp(64, 8192);
+    if (c == _memoryBudgetMb) return;
+    _memoryBudgetMb = c;
+    notifyListeners();
+  }
+
   // ------------------------------------------------------------- presets
   void applyPreset(ResizePreset p) {
     _presetName = p.name;
@@ -645,8 +662,10 @@ class ResizeSettings extends ChangeNotifier {
     'wm': _watermark.toJson(),
     'tmpl': _nameTemplate,
     'outdir': _outputDirectory,
-    'ow': _overwrite,
-    'keepext': _keepExtensionWhenKeepFormat,
+'ow': _overwrite,
+        'keepext': _keepExtensionWhenKeepFormat,
+        'writeNow': _writeImmediately,
+        'memMb': _memoryBudgetMb,
   };
 
   void _hydrateFrom(Map<String, dynamic>? j) {
@@ -700,6 +719,9 @@ class ResizeSettings extends ChangeNotifier {
     _overwrite = (j['ow'] as bool?) ?? _overwrite;
     _keepExtensionWhenKeepFormat =
         (j['keepext'] as bool?) ?? _keepExtensionWhenKeepFormat;
+    _writeImmediately = (j['writeNow'] as bool?) ?? _writeImmediately;
+    _memoryBudgetMb =
+        ((j['memMb'] as num?)?.toInt() ?? _memoryBudgetMb).clamp(64, 8192);
   }
 
   static const _storeKey = 'pixelforge.settings.v1';
@@ -742,6 +764,8 @@ _stripMetadata = true;
     _outputDirectory = '';
     _overwrite = false;
     _keepExtensionWhenKeepFormat = true;
+    _writeImmediately = false;
+    _memoryBudgetMb = 512;
     _aspectHint = null;
   }
 

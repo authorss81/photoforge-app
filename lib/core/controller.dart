@@ -74,13 +74,28 @@ class ResizeController extends ChangeNotifier {
   }
 
   int _ingest(List<({String name, Uint8List bytes, String? path})> files) {
+    final before = _jobs.length;
     final added = SourcePicker.addToQueue(_jobs, files);
     if (added > 0) {
       _selectedId ??= _jobs.first.id;
       _probeAll();
+      for (var i = before; i < _jobs.length; i++) {
+        _makeThumbnail(_jobs[i]);
+      }
       _changed();
     }
     return added;
+  }
+
+  /// Best-effort small preview, stored on the job so it survives [releaseSource].
+  void _makeThumbnail(ImageJob job) {
+    if (job.thumbnail != null || !job.hasSource) return;
+    try {
+      final thumb = ResizeEngine.thumbnail(job.bytes, maxDim: 256);
+      if (thumb != null) job.setThumbnail(thumb);
+    } catch (_) {
+      // Thumbnails are cosmetic; the run phase reports real errors.
+    }
   }
 
   void addDroppedFiles(
@@ -92,7 +107,7 @@ class ResizeController extends ChangeNotifier {
 
   void _probeAll() {
     for (final job in _jobs) {
-      if (job.sourceWidth != null) continue;
+      if (job.sourceWidth != null || !job.hasSource) continue;
       try {
         final info = ResizeEngine.probe(job.bytes, name: job.name);
         job.markProbed(info.width, info.height);
@@ -198,10 +213,24 @@ class ResizeController extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------- pipeline
+  /// Rough resident peak for one job: decoded RGBA plus working copies.
+  /// Conservative on purpose; underestimating is how batches OOM.
+  static int _jobPeak(ImageJob job) => job.inputBytes * 5 + (10 * 1024 * 1024);
+
   Future<void> runBatch() async {
     if (_busy) return;
-    final targets = _jobs.where((j) => j.status != JobStatus.done).toList();
+    var targets = _jobs.where((j) => j.status != JobStatus.done).toList();
     if (targets.isEmpty) return;
+
+    // Sources released after an earlier write cannot run again.
+    for (final j in targets.where((j) => !j.hasSource)) {
+      j.markSkipped('Source was released after writing; re-add the file to run it again.');
+    }
+    targets = targets.where((j) => j.hasSource && j.status != JobStatus.done).toList();
+    if (targets.isEmpty) {
+      _changed();
+      return;
+    }
 
     _busy = true;
     _changed();
@@ -210,18 +239,59 @@ class ResizeController extends ChangeNotifier {
     final runSettings = ResizeSettings()..loadFrom(snapshot);
 
     try {
-      if (WorkerPool.isSupported) {
-        _pool ??= await WorkerPool.create();
-        await _runPooled(targets, runSettings);
-      } else {
-        for (var i = 0; i < targets.length; i++) {
-          await _runOne(targets[i], runSettings);
+      // Split the batch so no chunk's estimated peak exceeds the budget. A
+      // single oversized job still runs alone; refusing it would be hostile
+      // and the estimate is conservative anyway.
+      final budget = runSettings.memoryBudgetMb * 1024 * 1024;
+      final chunks = <List<ImageJob>>[];
+      var current = <ImageJob>[];
+      var currentPeak = 0;
+      for (final job in targets) {
+        final peak = _jobPeak(job);
+        if (current.isNotEmpty && currentPeak + peak > budget) {
+          chunks.add(current);
+          current = <ImageJob>[];
+          currentPeak = 0;
+        }
+        current.add(job);
+        currentPeak += peak;
+      }
+      if (current.isNotEmpty) chunks.add(current);
+
+      var index = 0;
+      for (final chunk in chunks) {
+        if (WorkerPool.isSupported) {
+          _pool ??= await WorkerPool.create();
+          await _runPooled(chunk, runSettings);
+        } else {
+          for (var i = 0; i < chunk.length; i++) {
+            await _runOne(chunk[i], runSettings);
+          }
+        }
+        index++;
+        if (runSettings.writeImmediately) {
+          await _writeChunkNow(chunk, index);
         }
       }
     } finally {
       _busy = false;
       _changed();
     }
+  }
+
+  /// Writes every freshly completed job in the chunk, then releases its source
+  /// bytes. On web this is one download per file; everywhere else it is a
+  /// file write followed by freeing the input.
+  Future<void> _writeChunkNow(List<ImageJob> chunk, int chunkIndex) async {
+    for (var i = 0; i < chunk.length; i++) {
+      final job = chunk[i];
+      if (job.status != JobStatus.done || job.output == null) continue;
+      final name = await resolveOutputName(job, chunkIndex * 1000 + i + 1);
+      if (await _sink.saveBytes(job.output!, name, directory: _outDir)) {
+        job.releaseSource();
+      }
+    }
+    _changed();
   }
 
   /// One job on the calling isolate. The web path and every test.
@@ -327,8 +397,12 @@ class ResizeController extends ChangeNotifier {
       final bytes = job.output;
       if (bytes == null) continue;
       final name = await resolveOutputName(job, i + 1);
-      if (await _sink.saveBytes(bytes, name, directory: _outDir)) written++;
+      if (await _sink.saveBytes(bytes, name, directory: _outDir)) {
+        written++;
+        job.releaseSource();
+      }
     }
+    _changed();
     return written;
   }
 

@@ -719,6 +719,31 @@ class SettingsView extends StatelessWidget {
             style: TextStyle(fontSize: 13.5),
           ),
         ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          value: s.writeImmediately,
+          onChanged: s.setWriteImmediately,
+          title: const Text(
+            'Write each file as it finishes',
+            style: TextStyle(fontSize: 13.5),
+          ),
+          subtitle: Text(
+            'Frees memory during large batches; re-running needs the files re-added',
+            style: TextStyle(
+              fontSize: 11,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        _Slider(
+          label: 'Memory budget',
+          value: s.memoryBudgetMb.toDouble(),
+          min: 64,
+          max: 2048,
+          display: '${s.memoryBudgetMb} MB',
+          onChanged: (v) => s.setMemoryBudgetMb(v.round()),
+        ),
       ],
     );
   }

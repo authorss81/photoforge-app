@@ -354,7 +354,9 @@ class _PreviewPaneState extends State<_PreviewPane> {
 
     final bytes = job == null
         ? null
-        : (_showOriginal ? job.bytes : (job.output ?? job.bytes));
+        : (_showOriginal
+            ? (job.hasSource ? job.bytes : job.thumbnail)
+            : (job.output ?? (job.hasSource ? job.bytes : job.thumbnail)));
     final label = job == null
         ? null
         : (_showOriginal
