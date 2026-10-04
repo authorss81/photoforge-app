@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:desktop_drop/desktop_drop.dart';
@@ -373,6 +374,66 @@ class _PreviewPane extends StatefulWidget {
 
 class _PreviewPaneState extends State<_PreviewPane> {
   bool _showOriginal = false;
+  Uint8List? _liveBytes;
+  String? _liveForJob;
+  int _generation = 0;
+  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.settings.addListener(_scheduleLive);
+    widget.controller.addListener(_scheduleLive);
+    _scheduleLive();
+  }
+
+  @override
+  void didUpdateWidget(_PreviewPane oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.controller, widget.controller)) {
+      oldWidget.controller.settings.removeListener(_scheduleLive);
+      oldWidget.controller.removeListener(_scheduleLive);
+      widget.controller.settings.addListener(_scheduleLive);
+      widget.controller.addListener(_scheduleLive);
+      _scheduleLive();
+    }
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    widget.controller.settings.removeListener(_scheduleLive);
+    widget.controller.removeListener(_scheduleLive);
+    super.dispose();
+  }
+
+  /// Regenerates the live preview 120ms after the last change, so a slider
+  /// drag queues one render instead of dozens. A newer request discards the
+  /// older result rather than flashing it.
+  void _scheduleLive() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 120), _renderLive);
+  }
+
+  Future<void> _renderLive() async {
+    final controller = widget.controller;
+    final job = controller.selected;
+    if (job == null || !job.hasSource || _showOriginal) return;
+    final generation = ++_generation;
+    final jobId = job.id;
+    final snapshot = controller.settings.toJson();
+    final previewSettings = ResizeSettings()..loadFrom(snapshot);
+    final bytes = await ResizeEngine.renderPreview(
+      job.bytes,
+      previewSettings,
+      name: job.name,
+    );
+    if (!mounted || generation != _generation) return;
+    setState(() {
+      _liveBytes = bytes;
+      _liveForJob = jobId;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -380,16 +441,25 @@ class _PreviewPaneState extends State<_PreviewPane> {
     final job = controller.selected;
     final theme = Theme.of(context);
 
+    final live = !_showOriginal &&
+        job != null &&
+        _liveForJob == job.id &&
+        _liveBytes != null;
     final bytes = job == null
         ? null
         : (_showOriginal
               ? (job.hasSource ? job.bytes : job.thumbnail)
-              : (job.output ?? (job.hasSource ? job.bytes : job.thumbnail)));
+              : (live
+                    ? _liveBytes
+                    : (job.output ??
+                          (job.hasSource ? job.bytes : job.thumbnail))));
     final label = job == null
         ? null
         : (_showOriginal
               ? 'Original'
-              : (job.output != null ? 'Result' : 'Preview'));
+              : (live
+                    ? 'Live'
+                    : (job.output != null ? 'Result' : 'Preview')));
 
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -420,8 +490,10 @@ class _PreviewPaneState extends State<_PreviewPane> {
                       ),
                     ],
                     selected: {_showOriginal},
-                    onSelectionChanged: (s) =>
-                        setState(() => _showOriginal = s.first),
+                    onSelectionChanged: (s) {
+                      setState(() => _showOriginal = s.first);
+                      _scheduleLive();
+                    },
                   ),
           ),
           Expanded(

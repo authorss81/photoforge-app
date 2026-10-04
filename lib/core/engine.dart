@@ -257,6 +257,15 @@ class ResizeEngine {
     } catch (e) {
       decoded = null;
     }
+    // The extension may lie: a PNG proxy run under a .jpg name, or a file
+    // renamed by hand. Probe the bytes before giving up.
+    if (decoded == null) {
+      try {
+        decoded = img.decodeImage(bytes);
+      } catch (e) {
+        decoded = null;
+      }
+    }
     if (decoded == null || !decoded.isValid) {
       throw EngineError(
         'Could not decode this file — unsupported or corrupt data. HEIC, HEIF '
@@ -1176,6 +1185,36 @@ class ResizeEngine {
       );
     }
     return img.encodePng(work, level: 3);
+  }
+
+  /// A fast preview of what [run] would produce: the source downscaled to a
+  /// cheap proxy, then the real pipeline, not an approximation. Returns null
+  /// instead of throwing, because a preview must never break the UI.
+  static Future<Uint8List?> renderPreview(
+    Uint8List source,
+    ResizeSettings s, {
+    String? name,
+    int maxDim = 900,
+  }) async {
+    try {
+      final decoded = await decodeAsync(source, name);
+      Uint8List proxySource = source;
+      final longest = math.max(decoded.width, decoded.height);
+      if (longest > maxDim) {
+        final k = maxDim / longest;
+        final small = img.copyResize(
+          decoded,
+          width: (decoded.width * k).round().clamp(1, decoded.width),
+          height: (decoded.height * k).round().clamp(1, decoded.height),
+          interpolation: img.Interpolation.average,
+        );
+        proxySource = img.encodePng(small, level: 3);
+      }
+      final res = await run(proxySource, s, name: name);
+      return res.bytes;
+    } catch (_) {
+      return null;
+    }
   }
 }
 

@@ -1369,6 +1369,57 @@ void main() {
     });
   });
 
+  group('live-preview', () {
+    test('renders the real pipeline at preview size', () async {
+      final s = ResizeSettings()
+        ..setMode(ResizeMode.width)
+        ..setWidth(400)
+        ..setFormat(OutputFormat.jpeg);
+      final out = await ResizeEngine.renderPreview(
+        _makeJpeg(1600, 1000),
+        s,
+        name: 'p.jpg',
+      );
+      expect(out, isNotNull);
+      final decoded = img.decodeJpg(out!);
+      expect(decoded, isNotNull);
+      // Proxy longest edge is 900, then width 400 of the 1.6 aspect.
+      expect(decoded!.width, 400);
+      expect(decoded.height, 250);
+    });
+
+    test('preview applies the current settings', () async {
+      final plain = ResizeSettings()
+        ..setMode(ResizeMode.original)
+        ..setFormat(OutputFormat.png);
+      final gray = ResizeSettings()
+        ..setMode(ResizeMode.original)
+        ..setFormat(OutputFormat.png)
+        ..setGrayscale(1.0);
+      final src = _makeJpeg(200, 140);
+      final a = img.decodePng((await ResizeEngine.renderPreview(src, plain, name: 'p.jpg'))!)!;
+      final b = img.decodePng((await ResizeEngine.renderPreview(src, gray, name: 'p.jpg'))!)!;
+      var saturation = 0;
+      for (final p in b) {
+        saturation += ((p.r - p.g).abs() + (p.g - p.b).abs()).toInt();
+      }
+      expect(saturation, 0, reason: 'full grayscale leaves no chroma');
+      expect(a.width, b.width);
+    });
+
+    test('preview of garbage is null, never a throw', () async {
+      final s = ResizeSettings()..setFormat(OutputFormat.jpeg);
+      expect(
+        await ResizeEngine.renderPreview(
+          Uint8List.fromList(List.filled(64, 7)),
+          s,
+          name: 'x.jpg',
+        ),
+        isNull,
+      );
+    });
+  });
+
   group('streaming', () {
     ResizeController makeController() {
       final c = ResizeController();
