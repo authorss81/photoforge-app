@@ -138,6 +138,27 @@ abstract class AppStrings {
   String get unlinkDimensions;
   String get linkAspect;
   String get keepAllCaps;
+
+  // Shortcuts and onboarding.
+  String get close;
+  String get keyboardShortcuts;
+  String get shortcutAddFiles;
+  String get shortcutProcess;
+  String get shortcutSave;
+  String get shortcutDeleteSelection;
+  String get shortcutTogglePreview;
+  String get shortcutFocusSearch;
+  String get shortcutShowShortcuts;
+  String get onboardingSkip;
+  String get onboardingNext;
+  String get onboardingBack;
+  String get onboardingGetStarted;
+  String get onboardingTitle1;
+  String get onboardingBody1;
+  String get onboardingTitle2;
+  String get onboardingBody2;
+  String get onboardingTitle3;
+  String get onboardingBody3;
 }
 
 class EnStrings extends AppStrings {
@@ -414,6 +435,52 @@ class EnStrings extends AppStrings {
   String get linkAspect => 'Lock aspect ratio';
   @override
   String get keepAllCaps => 'KEEP';
+
+  @override
+  String get close => 'Close';
+  @override
+  String get keyboardShortcuts => 'Keyboard shortcuts';
+  @override
+  String get shortcutAddFiles => 'Add files';
+  @override
+  String get shortcutProcess => 'Process queue';
+  @override
+  String get shortcutSave => 'Save results';
+  @override
+  String get shortcutDeleteSelection => 'Delete selected';
+  @override
+  String get shortcutTogglePreview => 'Toggle before/after';
+  @override
+  String get shortcutFocusSearch => 'Focus search';
+  @override
+  String get shortcutShowShortcuts => 'Show this list';
+  @override
+  String get onboardingSkip => 'Skip';
+  @override
+  String get onboardingNext => 'Next';
+  @override
+  String get onboardingBack => 'Back';
+  @override
+  String get onboardingGetStarted => 'Get started';
+  @override
+  String get onboardingTitle1 => 'Batch resize, without the wait';
+  @override
+  String get onboardingBody1 =>
+      'Drop in a folder of photos and PixelForge resizes, recompresses and '
+      'reformats all of them at once. Watch the before-and-after as you drag '
+      'the sliders.';
+  @override
+  String get onboardingTitle2 => 'Everything stays on this machine';
+  @override
+  String get onboardingBody2 =>
+      'PixelForge asks for no internet permission, so it is physically unable '
+      'to upload your photos. Not a promise not to; an inability.';
+  @override
+  String get onboardingTitle3 => 'Start with a preset';
+  @override
+  String get onboardingBody3 =>
+      'Choose a preset such as Web for sharing or Archive for keeping quality, '
+      'then drop in images. You can change every setting later.';
 }
 
 class AppLocalizations {

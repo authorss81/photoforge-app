@@ -12,9 +12,11 @@ import '../core/resize_mode.dart';
 import '../core/settings.dart';
 import '../core/shared_content.dart';
 import '../l10n/app_localizations.dart';
+import 'onboarding.dart';
 import 'theme.dart';
 import 'widgets/preview.dart';
 import 'widgets/queue_view.dart';
+import 'widgets/shortcuts.dart';
 import 'widgets/settings_view.dart';
 
 class HomePage extends StatefulWidget {
@@ -30,6 +32,10 @@ class _HomePageState extends State<HomePage> {
   int _pane = 0;
   bool _dragging = false;
 
+  /// Owned here rather than inside the preview pane so a shortcut can reach it
+  /// without a GlobalKey.
+  final GlobalKey<_PreviewPaneState> _previewKey = GlobalKey();
+
   ResizeController get controller => widget.controller;
 
   static const _wideBreakpoint = 980.0;
@@ -38,6 +44,31 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _collectShared();
+    // Deferred to after the first frame: maybeShow awaits storage, and showing a
+    // dialog during initState would run before there is anything to show it
+    // over.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Onboarding.maybeShow(context, controller);
+    });
+  }
+
+  /// The actions the shortcuts invoke. Public methods on the state rather than
+  /// inline closures, so a widget test can trigger them through the same path a
+  /// key press takes.
+  void togglePreview() => _previewKey.currentState?.toggleView();
+
+  void deleteSelected() {
+    final id = controller.selectedId;
+    if (id != null) controller.removeJob(id);
+  }
+
+  void showShortcuts() => ShortcutHost.showShortcutsDialog(context);
+
+  void focusSearch() {
+    // There is no settings search field yet (deliberately out of scope for this
+    // phase). Jump to the settings pane so the shortcut is honest about where
+    // the user lands rather than silently doing nothing.
+    if (_pane != 2) setState(() => _pane = 2);
   }
 
   /// Picks up images shared into the app while it was closed. Runs once at
@@ -63,30 +94,57 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    return DropTarget(
-      onDragEntered: (_) => setState(() => _dragging = true),
-      onDragExited: (_) => setState(() => _dragging = false),
-      onDragDone: _onDrop,
-      child: AnimatedBuilder(
-        animation: controller,
-        builder: (context, _) {
-          return Scaffold(
-            appBar: _buildAppBar(context),
-            body: Stack(
-              children: [
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final wide = constraints.maxWidth >= _wideBreakpoint;
-                    return wide ? _buildWide() : _buildNarrow();
-                  },
-                ),
-                if (_dragging) const _DropOverlay(),
-              ],
-            ),
-          );
-        },
+    // Outside the AnimatedBuilder: the shortcut layer must not be rebuilt on
+    // every queue change, and a rebuild would drop the focus the keys need.
+    return ShortcutHost(
+      controller: controller,
+      addFiles: controller.busy ? () {} : _addFiles,
+      runBatch: _startBatch,
+      saveNow: _saveNow,
+      deleteSelected: deleteSelected,
+      togglePreview: togglePreview,
+      focusSearch: focusSearch,
+      showShortcuts: showShortcuts,
+      child: DropTarget(
+        onDragEntered: (_) => setState(() => _dragging = true),
+        onDragExited: (_) => setState(() => _dragging = false),
+        onDragDone: _onDrop,
+        child: AnimatedBuilder(
+          animation: controller,
+          builder: (context, _) {
+            return Scaffold(
+              appBar: _buildAppBar(context),
+              body: Stack(
+                children: [
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final wide = constraints.maxWidth >= _wideBreakpoint;
+                      return wide ? _buildWide() : _buildNarrow();
+                    },
+                  ),
+                  if (_dragging) const _DropOverlay(),
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
+  }
+
+  void _startBatch() {
+    if (controller.busy) return;
+    controller.runBatch();
+  }
+
+  /// Writes finished jobs to the chosen folder now, rather than waiting for
+  /// the write-immediately setting to do it at the end of a batch.
+  Future<void> _saveNow() async {
+    final done = controller.jobs.where(
+      (j) => j.status == JobStatus.done && j.output != null,
+    );
+    if (done.isEmpty) return;
+    await controller.saveAll();
   }
 
   PreferredSizeWidget _buildAppBar(BuildContext context) {
@@ -166,6 +224,12 @@ class _HomePageState extends State<HomePage> {
           generation: controller.settings.savedGeneration,
           label: AppLocalizations.of(context).settingsSaved,
         ),
+        if (ShortcutHost.isDesktop)
+          IconButton(
+            tooltip: AppLocalizations.of(context).keyboardShortcuts,
+            onPressed: showShortcuts,
+            icon: const Icon(Icons.keyboard_outlined),
+          ),
         const SizedBox(width: 4),
       ],
       bottom: PreferredSize(
@@ -190,7 +254,7 @@ class _HomePageState extends State<HomePage> {
         Expanded(
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
-            child: _PreviewPane(controller: controller),
+            child: _PreviewPane(key: _previewKey, controller: controller),
           ),
         ),
         SizedBox(
@@ -224,7 +288,7 @@ class _HomePageState extends State<HomePage> {
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(10, 10, 10, 4),
-                child: _PreviewPane(controller: controller),
+                child: _PreviewPane(key: _previewKey, controller: controller),
               ),
               Card(
                 clipBehavior: Clip.antiAlias,
@@ -364,7 +428,7 @@ class _DropOverlay extends StatelessWidget {
 }
 
 class _PreviewPane extends StatefulWidget {
-  const _PreviewPane({required this.controller});
+  const _PreviewPane({super.key, required this.controller});
 
   final ResizeController controller;
 
@@ -380,6 +444,19 @@ class _PreviewPaneState extends State<_PreviewPane> {
   String? _liveForJob;
   int _generation = 0;
   Timer? _debounce;
+
+  /// Cycles before -> split -> after. Public so the toggle shortcut can reach
+  /// it through the state key rather than duplicating the order here.
+  void toggleView() {
+    setState(() {
+      _view = switch (_view) {
+        _PreviewMode.before => _PreviewMode.split,
+        _PreviewMode.split => _PreviewMode.after,
+        _PreviewMode.after => _PreviewMode.before,
+      };
+    });
+    _scheduleLive();
+  }
 
   @override
   void initState() {
