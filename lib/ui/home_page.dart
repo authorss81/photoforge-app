@@ -9,6 +9,7 @@ import '../core/job.dart';
 import '../core/picker.dart';
 import '../core/resize_mode.dart';
 import '../core/settings.dart';
+import '../core/shared_content.dart';
 import 'theme.dart';
 import 'widgets/preview.dart';
 import 'widgets/queue_view.dart';
@@ -30,6 +31,33 @@ class _HomePageState extends State<HomePage> {
   ResizeController get controller => widget.controller;
 
   static const _wideBreakpoint = 980.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _collectShared();
+  }
+
+  /// Picks up images shared into the app while it was closed. Runs once at
+  /// startup and never again; shares arriving while running are rare enough
+  /// that relaunching to collect them is acceptable.
+  Future<void> _collectShared() async {
+    try {
+      final shared = await SharedContent.collect();
+      if (shared == null || shared.isEmpty || !mounted) return;
+      controller.addDroppedFiles(shared);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Added ${shared.length} shared file${shared.length == 1 ? '' : 's'}',
+          ),
+        ),
+      );
+    } catch (_) {
+      // Sharing is a convenience; it must never break startup.
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -474,7 +502,26 @@ class _ResultBar extends StatelessWidget {
               icon: Icons.savings_outlined,
               highlight: true,
             ),
+          if (job.output != null && SharedContent.isMobile)
+            IconButton(
+              tooltip: 'Save to gallery',
+              onPressed: () => _saveToGallery(context),
+              icon: const Icon(Icons.save_alt_outlined, size: 20),
+            ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _saveToGallery(BuildContext context) async {
+    final output = job.output;
+    if (output == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final error = await SharedContent.saveToGallery(output, job.name);
+    if (!context.mounted) return;
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(error ?? 'Saved ${job.name} to the gallery'),
       ),
     );
   }

@@ -5,8 +5,19 @@ import UniformTypeIdentifiers
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate,
-  PHPickerViewControllerDelegate {
+  PHPickerViewControllerDelegate
+{
   private var pickerResult: FlutterResult?
+  private var pendingShared: [[String: Any]] = []
+
+  /// Carries a FlutterResult through the C callback of
+  /// UIImageWriteToSavedPhotosAlbum, which cannot capture Swift state.
+  private final class SaveBox {
+    let result: FlutterResult
+    init(result: @escaping FlutterResult) {
+      self.result = result
+    }
+  }
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -54,6 +65,75 @@ import UniformTypeIdentifiers
         return
       }
       self?.presentPicker(result: result)
+    }
+
+    let shared = FlutterMethodChannel(
+      name: "dev.pixelforge/shared_content",
+      binaryMessenger: engineBridge.binaryMessenger
+    )
+    shared.setMethodCallHandler { [weak self] call, result in
+      switch call.method {
+      case "getSharedImages":
+        result(self?.pendingShared ?? [])
+        self?.pendingShared = []
+      case "saveToGallery":
+        guard let args = call.arguments as? [String: Any],
+          let bytes = (args["bytes"] as? FlutterStandardTypedData)?.data
+        else {
+          result(
+            FlutterError(code: "ARG", message: "missing image bytes",
+              details: nil))
+          return
+        }
+        self?.saveToPhotos(bytes, result: result)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+  }
+
+  override func application(
+    _ app: UIApplication,
+    open url: URL,
+    options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+  ) -> Bool {
+    // "Open in PixelForge" lands a copy in Documents/Inbox. Read it now;
+    // the sandbox may clean it before Dart gets around to asking.
+    if let data = try? Data(contentsOf: url) {
+      pendingShared.append([
+        "name": url.lastPathComponent,
+        "bytes": FlutterStandardTypedData(bytes: data),
+      ])
+      try? FileManager.default.removeItem(at: url)
+    }
+    return super.application(app, open: url, options: options)
+  }
+
+  private func saveToPhotos(_ bytes: Data, result: @escaping FlutterResult) {
+    guard let image = UIImage(data: bytes) else {
+      result(
+        FlutterError(code: "SAVE", message: "bytes are not an image",
+          details: nil))
+      return
+    }
+    UIImageWriteToSavedPhotosAlbum(
+      image, self,
+      #selector(savedPhoto(_:didFinishSavingWithError:contextInfo:)),
+      Unmanaged.passRetained(SaveBox(result: result)).toOpaque())
+  }
+
+  @objc private func savedPhoto(
+    _ image: UIImage,
+    didFinishSavingWithError error: Error?,
+    contextInfo: UnsafeRawPointer
+  ) {
+    let box = Unmanaged<SaveBox>.fromOpaque(contextInfo).takeRetainedValue()
+    if let error = error {
+      box.result(
+        FlutterError(code: "SAVE", message: error.localizedDescription,
+          details: nil))
+    } else {
+      box.result(nil)
     }
   }
 

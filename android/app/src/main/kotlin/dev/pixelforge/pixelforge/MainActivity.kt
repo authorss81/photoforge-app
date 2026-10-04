@@ -1,9 +1,13 @@
 package dev.pixelforge.pixelforge
 
+import android.content.ContentValues
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -15,6 +19,9 @@ import java.nio.ByteBuffer
 
 class MainActivity : FlutterActivity() {
     private var photoPickerResult: MethodChannel.Result? = null
+
+    /// URIs shared into the app that Dart has not collected yet.
+    private val pendingShared = mutableListOf<Uri>()
 
     /// System Photo Picker. Needs no permission and returns only what the
     /// user selected. Capped so one enthusiastic selection cannot OOM the app;
@@ -55,6 +62,7 @@ class MainActivity : FlutterActivity() {
     }
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        collectSharedIntent(intent)
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "dev.pixelforge/native_decoder",
@@ -109,6 +117,118 @@ class MainActivity : FlutterActivity() {
                 result.error("PICK", e.message, null)
             }
         }
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "dev.pixelforge/shared_content",
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "getSharedImages" -> {
+                    try {
+                        val out = pendingShared.mapNotNull { readPickedFile(it) }
+                        pendingShared.clear()
+                        result.success(out)
+                    } catch (e: Exception) {
+                        result.error("SHARE", e.message, null)
+                    }
+                }
+                "saveToGallery" -> {
+                    val bytes = call.argument<ByteArray>("bytes")
+                    val name = call.argument<String>("name") ?: "image"
+                    if (bytes == null) {
+                        result.error("ARG", "missing image bytes", null)
+                    } else {
+                        try {
+                            result.success(saveToGallery(bytes, name))
+                        } catch (e: Exception) {
+                            result.error("SAVE", e.message, null)
+                        }
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        collectSharedIntent(intent)
+    }
+
+    /// Stashes shared image URIs for Dart to collect. Reading happens lazily
+    /// on collection so a large share does not block the launch.
+    private fun collectSharedIntent(intent: Intent?) {
+        if (intent == null) return
+        when (intent.action) {
+            Intent.ACTION_SEND -> {
+                @Suppress("DEPRECATION")
+                val uri = if (Build.VERSION.SDK_INT >= 33) {
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                } else {
+                    intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+                }
+                if (uri != null && pendingShared.size < 20) pendingShared.add(uri)
+            }
+            Intent.ACTION_SEND_MULTIPLE -> {
+                @Suppress("DEPRECATION")
+                val uris = if (Build.VERSION.SDK_INT >= 33) {
+                    intent.getParcelableArrayListExtra(
+                        Intent.EXTRA_STREAM, Uri::class.java,
+                    )
+                } else {
+                    intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
+                }
+                if (uris != null) {
+                    for (u in uris) {
+                        if (pendingShared.size >= 20) break
+                        if (u != null) pendingShared.add(u)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Writes into MediaStore, which needs no permission on API 29+. Below
+    /// that a write would need storage permission, which this app will not
+    /// request, so it fails with a message saying exactly that.
+    private fun saveToGallery(bytes: ByteArray, name: String): String {
+        if (Build.VERSION.SDK_INT < 29) {
+            throw Exception(
+                "Saving to the gallery needs Android 10 (API 29)+ without a " +
+                    "storage permission, which this app does not request",
+            )
+        }
+        val ext = name.substringAfterLast('.', "jpg").lowercase()
+        val mime = when (ext) {
+            "png" -> "image/png"
+            "webp" -> "image/webp"
+            "gif" -> "image/gif"
+            else -> "image/jpeg"
+        }
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, name)
+            put(MediaStore.Images.Media.MIME_TYPE, mime)
+            put(
+                MediaStore.Images.Media.RELATIVE_PATH,
+                Environment.DIRECTORY_PICTURES + "/PixelForge",
+            )
+            put(MediaStore.Images.Media.IS_PENDING, 1)
+        }
+        val resolver = contentResolver
+        val uri = resolver.insert(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values,
+        ) ?: throw Exception("MediaStore refused the insert")
+        try {
+            resolver.openOutputStream(uri)?.use { it.write(bytes) }
+                ?: throw Exception("MediaStore would not open the file")
+        } catch (e: Exception) {
+            resolver.delete(uri, null, null)
+            throw e
+        }
+        values.clear()
+        values.put(MediaStore.Images.Media.IS_PENDING, 0)
+        resolver.update(uri, values, null, null)
+        return uri.toString()
     }
 
     /// Decodes with the platform ImageDecoder and returns lossless PNG bytes.

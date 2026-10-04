@@ -13,6 +13,7 @@ import 'package:pixelforge/core/native/libheif.dart';
 import 'package:pixelforge/core/tiff16.dart';
 import 'package:pixelforge/core/resize_mode.dart';
 import 'package:pixelforge/core/settings.dart';
+import 'package:pixelforge/core/shared_content.dart';
 import 'package:pixelforge/core/worker.dart';
 
 Uint8List _makeJpeg(int w, int h, {int quality = 92}) {
@@ -1072,6 +1073,58 @@ void main() {
       } finally {
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(NativeDecoder.channel, null);
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
+    test('shared content collects and saves through one channel', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      final png = img.encodePng(
+        img.Image(width: 20, height: 10, numChannels: 3),
+      );
+      try {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(SharedContent.channel, (call) async {
+          if (call.method == 'getSharedImages') {
+            return [
+              {'name': 'shared.png', 'bytes': png},
+            ];
+          }
+          if (call.method == 'saveToGallery') {
+            expect((call.arguments as Map)['name'], 'out.png');
+            return null;
+          }
+          throw PlatformException(code: 'UNIMPLEMENTED');
+        });
+        final got = await SharedContent.collect();
+        expect(got, hasLength(1));
+        expect(got!.first.name, 'shared.png');
+        expect(await SharedContent.saveToGallery(png, 'out.png'), isNull);
+      } finally {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(SharedContent.channel, null);
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
+    test('shared content stays off desktop', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      try {
+        var called = false;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(SharedContent.channel, (call) async {
+          called = true;
+          return null;
+        });
+        expect(await SharedContent.collect(), isNull);
+        expect(
+          await SharedContent.saveToGallery(Uint8List.fromList([1]), 'x.png'),
+          contains('phones'),
+        );
+        expect(called, isFalse);
+      } finally {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(SharedContent.channel, null);
         debugDefaultTargetPlatformOverride = null;
       }
     });

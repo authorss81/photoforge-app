@@ -42,6 +42,36 @@ void main() {
     });
   });
 
+  group('iOS entitlements', () {
+    final plist = File('ios/Runner/Info.plist');
+
+    test('exists', () {
+      expect(plist.existsSync(), isTrue);
+    });
+
+    test('asks for nothing except add-only photo access', () {
+      // The single justified exception: saving results to Photos needs
+      // NSPhotoLibraryAddUsageDescription, which grants writing and nothing
+      // else. Reading still goes through PHPicker, which needs no permission.
+      // If this list ever grows, that is a product decision, not an accident,
+      // and this test is where it gets argued about.
+      const allowed = {'NSPhotoLibraryAddUsageDescription'};
+      final text = plist.readAsStringSync();
+      final keys = RegExp(r'<key>(NS[A-Za-z]+UsageDescription)</key>')
+          .allMatches(text)
+          .map((m) => m.group(1)!)
+          .toSet();
+      final extra = keys.difference(allowed);
+      expect(extra, isEmpty, reason: 'unexpected iOS permissions: $extra');
+    });
+
+    test('has no network entitlement', () {
+      final text = plist.readAsStringSync();
+      expect(text.contains('com.apple.security.network'), isFalse);
+      expect(text.contains('aps-environment'), isFalse);
+    });
+  });
+
   group('dependency surface', () {
     /// Package names from the `dependencies:` block of pubspec.yaml.
     List<String> directDependencies() {
