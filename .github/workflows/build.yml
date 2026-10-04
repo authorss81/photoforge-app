@@ -269,12 +269,11 @@ jobs:
             fi
           done
           if [ -z "$EMU" ]; then
-            echo "::error::no emulator binary found in any SDK root"
-            echo "searched:"
-            for root in "${ANDROID_SDK_ROOT:-}" "${ANDROID_HOME:-}" /usr/local/lib/android/sdk; do
-              echo "  $root/emulator/emulator"
-            done
-            exit 1
+            # Not an error. The runner image ships the SDK without the emulator,
+            # and android-emulator-runner installs it via sdkmanager itself.
+            # Failing here only prevented that from being attempted.
+            echo "::notice::no emulator binary present yet; the action installs it"
+            exit 0
           fi
           echo "found emulator: $EMU"
           # Informational only. Failing here would block the run on a
