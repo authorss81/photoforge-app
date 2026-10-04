@@ -701,23 +701,37 @@ void main() {
         },
       );
 
-      test('HEIC without a decoder names the missing decoder', () async {
-        // The fixture is only used for its extension here: the platform branch
-        // decides whether libheif is present, and either way the message must
-        // identify the format and the reason.
+      test('HEIC either decodes or names the missing decoder', () async {
+        // Whichever way this platform goes, the outcome must be explicit:
+        // either it decodes, or it says the decoder is missing. A silently
+        // swallowed outcome would let the original bug, a HEIC reported as
+        // corrupt data, pass.
+        //
+        // This runs on Linux CI too, where a system libheif may or may not
+        // have HEVC support, so both branches are reachable and both are
+        // asserted.
         final heic = File('test/fixtures/gradient.heic');
         if (!heic.existsSync()) {
           markTestSkipped('no HEIC fixture');
           return;
         }
+        final bytes = await heic.readAsBytes();
         try {
-          await ResizeEngine.run(
-            await heic.readAsBytes(),
-            s,
-            name: 'photo.heic',
+          final res = await ResizeEngine.run(bytes, s, name: 'photo.heic');
+          expect(
+            res.width,
+            greaterThan(0),
+            reason: 'if it decoded at all it must be a real image',
           );
         } on EngineError catch (e) {
-          expect(e.kind, EngineErrorKind.codecUnavailable);
+          expect(
+            e.kind,
+            EngineErrorKind.codecUnavailable,
+            reason:
+                'a missing decoder must not be reported as corrupt data or an '
+                'unsupported format: the format is supported, the environment '
+                'is not. Got: ${e.message}',
+          );
           expect(e.message, contains('HEIC'));
           expect(e.message, contains('photo.heic'));
         }

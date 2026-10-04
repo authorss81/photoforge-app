@@ -282,14 +282,17 @@ class Libheif {
       // library and a different problem from a corrupt file, and the user cannot
       // fix it by re-downloading anything. Say so instead of leaking the raw
       // code.
-      throw EngineError(
+      throw EngineError.codecUnavailable(
         'The libheif on this system was built without HEVC support, so it '
         'cannot read this HEIC. Convert to JPEG first, or install a libheif '
         'with HEVC decoding.',
       );
     }
-    throw EngineError(
+    // Anything else from the library is a failure to read these particular
+    // bytes, not a missing codec.
+    throw EngineError.corruptData(
       'libheif failed to $step the image (code ${err.code}).$detail',
+      detail: 'libheif code ${err.code}',
     );
   }
 
