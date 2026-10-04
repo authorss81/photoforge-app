@@ -335,13 +335,14 @@ jobs:
           # time, and the KVM step above is what enables it. SwiftShader is
           # deliberately not used: it is roughly fifty times slower and would
           # make this job unusable.
-          emulator-options: -no-snapshot-save -no-boot-anim
           emulator-boot-timeout: 600
           # The emulator is a Qt application. Without a usable display it aborts
           # with "no Qt platform plugin could be initialized", which the log
           # shows as a ten-minute boot timeout rather than as the real cause.
           # -no-window is the headless mode, which is what a CI runner needs and
-          # which removes the Qt display dependency entirely.
+          # which removes the Qt display dependency entirely. -no-metrics
+          # silences the prompt the log flagged as "ACTION REQUIRED", and
+          # -accel on is explicit now that KVM is confirmed working.
           emulator-options: >-
             -no-snapshot-save
             -no-boot-anim
