@@ -238,7 +238,7 @@ class ResizeEngine {
       // Desktop ships a bundled libheif. Mobile relies on the platform
       // decoder above; when that is absent there is nothing left to try.
       if (Libheif.load() != null) {
-        return Libheif.decode(bytes);
+        return Libheif.decode(bytes, name: name);
       }
     }
     return _decodeOrThrow(bytes, name);

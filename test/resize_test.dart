@@ -701,6 +701,35 @@ void main() {
         },
       );
 
+      test('a libheif read failure names the file', () {
+        // Which kind this is depends on the host: with no library it is
+        // codecUnavailable, and with the bundled one it is corruptData. Both
+        // mean libheif could not read these bytes, and both must identify the
+        // file so a batch can attribute the failure.
+        //
+        // Asserting one kind exactly would be asserting which platform the
+        // suite happens to run on. That is exactly the mistake that made an
+        // earlier version of the HEIC assertion pass locally and fail on Linux.
+        try {
+          Libheif.decode(Uint8List.fromList([1, 2, 3]), name: 'mystery.heic');
+          fail('three bytes are not an image');
+        } on EngineError catch (e) {
+          expect(
+            e.kind,
+            anyOf(
+              EngineErrorKind.codecUnavailable,
+              EngineErrorKind.corruptData,
+            ),
+            reason: 'got ${e.kind} for: ${e.message}',
+          );
+          expect(
+            e.detail,
+            contains('mystery.heic'),
+            reason: 'the failure must identify which file failed',
+          );
+        }
+      });
+
       test('HEIC either decodes or names the missing decoder', () async {
         // Whichever way this platform goes, the outcome must be explicit:
         // either it decodes, or it says the decoder is missing. A silently

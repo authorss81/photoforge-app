@@ -14,10 +14,13 @@ class Libheif {
 
   static String? get loadedFrom => null;
 
-  static img.Image decode(Uint8List bytes) {
-    throw EngineError(
+  /// [name] mirrors the desktop signature and is carried on the error so a
+  /// batch can attribute the failure to one file.
+  static img.Image decode(Uint8List bytes, {String? name}) {
+    throw EngineError.codecUnavailable(
       'HEIC decoding needs the bundled libheif, which was not found. '
       'Convert to JPEG first.',
+      detail: name,
     );
   }
 }

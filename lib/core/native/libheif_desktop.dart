@@ -179,32 +179,37 @@ class Libheif {
   }
 
   /// Decodes to an RGB image. Throws [EngineError] naming the failure.
-  static img.Image decode(Uint8List bytes) {
+  ///
+  /// [name] is the file being decoded, carried on the error so a failure in a
+  /// batch can be attributed to one item. It is threaded through rather than held
+  /// in static state, which would be wrong as soon as two files were in flight.
+  static img.Image decode(Uint8List bytes, {String? name}) {
     final lib = load();
     if (lib == null) {
-      throw EngineError(
+      throw EngineError.codecUnavailable(
         'HEIC decoding needs the bundled libheif, which was not found. '
         'Convert to JPEG first.',
+        detail: name,
       );
     }
     final api = Libheif._(lib);
-    return api._decodeToImage(bytes);
+    return api._decodeToImage(bytes, name: name);
   }
 
-  img.Image _decodeToImage(Uint8List bytes) {
+  img.Image _decodeToImage(Uint8List bytes, {String? name}) {
     final ctx = _alloc();
     try {
       final src = calloc<Uint8>(bytes.length);
       try {
         src.asTypedList(bytes.length).setAll(0, bytes);
         final err = _readMem(ctx, src, bytes.length, nullptr);
-        _check(err, 'read');
+        _check(err, 'read', name);
       } finally {
         calloc.free(src);
       }
       final handlePtr = calloc<Pointer<Void>>();
       try {
-        _check(_primary(ctx, handlePtr), 'primary image');
+        _check(_primary(ctx, handlePtr), 'primary image', name);
         final handle = handlePtr.value;
         try {
           final imgPtr = calloc<Pointer<Void>>();
@@ -212,8 +217,9 @@ class Libheif {
             _check(
               _decode(handle, imgPtr, _colorspaceRgb, _chroma444, nullptr),
               'decode',
+              name,
             );
-            return _readRgb(imgPtr.value);
+            return _readRgb(imgPtr.value, name);
           } finally {
             calloc.free(imgPtr);
           }
@@ -228,12 +234,15 @@ class Libheif {
     }
   }
 
-  img.Image _readRgb(Pointer<Void> image) {
+  img.Image _readRgb(Pointer<Void> image, String? name) {
     try {
       final w = _width(image, _chR);
       final h = _height(image, _chR);
       if (w <= 0 || h <= 0 || w > 20000 || h > 20000) {
-        throw EngineError('libheif reported an absurd size ($w x $h).');
+        throw EngineError.corruptData(
+          'libheif reported an absurd size ($w x $h).',
+          detail: name,
+        );
       }
       final out = img.Image(width: w, height: h, numChannels: 3);
       final planes = <int, Uint8List>{};
@@ -243,7 +252,10 @@ class Libheif {
         try {
           final ptr = _plane(image, ch, stridePtr);
           if (ptr == nullptr) {
-            throw EngineError('libheif returned no data for a colour plane.');
+            throw EngineError.corruptData(
+              'libheif returned no data for a colour plane.',
+              detail: name,
+            );
           }
           final stride = stridePtr.value;
           planes[ch] = ptr.asTypedList(stride * h);
@@ -271,7 +283,7 @@ class Libheif {
     }
   }
 
-  void _check(_HeifError err, String step) {
+  void _check(_HeifError err, String step, String? name) {
     if (err.code == 0) return;
     final detail = err.message == nullptr
         ? ''
@@ -286,13 +298,18 @@ class Libheif {
         'The libheif on this system was built without HEVC support, so it '
         'cannot read this HEIC. Convert to JPEG first, or install a libheif '
         'with HEVC decoding.',
+        // Carries the failing file, so a batch can attribute the error to one
+        // item rather than to the run as a whole.
+        detail: name,
       );
     }
     // Anything else from the library is a failure to read these particular
     // bytes, not a missing codec.
     throw EngineError.corruptData(
       'libheif failed to $step the image (code ${err.code}).$detail',
-      detail: 'libheif code ${err.code}',
+      detail: name == null
+          ? 'libheif code ${err.code}'
+          : '$name, code ${err.code}',
     );
   }
 
