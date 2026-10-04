@@ -572,6 +572,13 @@ class ResizeEngine {
 
     if (work.width != geometry.target.width ||
         work.height != geometry.target.height) {
+      // copyResize silently downgrades paletted images to nearest-neighbour,
+      // which turns smooth gradients into staircases. Go through direct
+      // colour for the resize; the GIF encoder re-quantizes on the way out.
+      // The size cost of the round trip is measured in the phase-13 test.
+      if (work.hasPalette) {
+        work = work.convert(numChannels: work.hasAlpha ? 4 : 3);
+      }
       work = img.copyResize(
         work,
         width: geometry.target.width,

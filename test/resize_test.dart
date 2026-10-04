@@ -496,6 +496,61 @@ void main() {
   });
 
   group('formats', () {
+    double _meanAbs(img.Image a, img.Image b) {
+      var sum = 0;
+      var n = 0;
+      for (var y = 0; y < a.height && y < b.height; y++) {
+        for (var x = 0; x < a.width && x < b.width; x++) {
+          final pa = a.getPixel(x, y);
+          final pb = b.getPixel(x, y);
+          sum += (pa.r - pb.r).abs().toInt();
+          sum += (pa.g - pb.g).abs().toInt();
+          sum += (pa.b - pb.b).abs().toInt();
+          n += 3;
+        }
+      }
+      return sum / n;
+    }
+
+    test('indexed GIF resizes through direct colour, not nearest', () async {
+      // Smooth diagonal gradient: nearest-neighbour downscaling staircases it.
+      final direct = img.Image(width: 200, height: 200, numChannels: 3);
+      for (final p in direct) {
+        direct.setPixelRgba(p.x, p.y, (p.x + p.y) ~/ 2, (p.x * 2) % 256, 128, 255);
+      }
+      final paletted = img.decodeGif(img.encodeGif(direct, singleFrame: true))!;
+      expect(paletted.hasPalette, isTrue);
+      final gif = img.encodeGif(paletted, singleFrame: true);
+
+      final s = ResizeSettings()
+        ..setMode(ResizeMode.width)
+        ..setWidth(100)
+        ..setFormat(OutputFormat.png);
+      final res = await ResizeEngine.run(gif, s, name: 'idx.gif');
+      final out = img.decodePng(res.bytes)!;
+      expect(out.width, 100);
+
+      // Reference: the same resize from direct colour.
+      final ref = img.copyResize(
+        direct,
+        width: 100,
+        height: 100,
+        interpolation: img.Interpolation.average,
+      );
+      // Baseline: what the old nearest-neighbour path produced.
+      final baseline = img.copyResize(
+        img.decodeGif(gif)!,
+        width: 100,
+        height: 100,
+        interpolation: img.Interpolation.nearest,
+      );
+      expect(
+        _meanAbs(out, ref),
+        lessThan(_meanAbs(baseline, ref)),
+        reason: 'direct-colour resize must beat nearest-neighbour against the reference',
+      );
+    });
+
     Uint8List sofJpeg(int components) {
       final bytes = <int>[
         0xFF, 0xD8, // SOI
