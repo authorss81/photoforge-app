@@ -7,6 +7,7 @@ import 'job.dart';
 import 'picker.dart';
 import 'saver/saver.dart';
 import 'settings.dart';
+import 'worker.dart';
 
 /// Owns the queue and drives the batch pipeline.
 class ResizeController extends ChangeNotifier {
@@ -16,6 +17,7 @@ class ResizeController extends ChangeNotifier {
 
   final ResizeSettings settings;
   final OutputSink _sink;
+  WorkerPool? _pool;
 
   final List<ImageJob> _jobs = <ImageJob>[];
   List<ImageJob> get jobs => List.unmodifiable(_jobs);
@@ -208,38 +210,108 @@ class ResizeController extends ChangeNotifier {
     final runSettings = ResizeSettings()..loadFrom(snapshot);
 
     try {
-      for (var i = 0; i < targets.length; i++) {
-        final job = targets[i];
-        job.markRunning(0.0);
-        _changed();
-        final results = await processJob(job, runSettings);
-        // A multi-page document yields one result per page. The first stays
-        // on the original job; the rest become siblings so each saves under
-        // its own name.
-        for (var k = 1; k < results.length; k++) {
-          final r = results[k];
-          final sibling = ImageJob(
-            id: '${job.id}-p${k + 1}',
-            name: _siblingName(job.name, k + 1),
-            bytes: job.bytes,
-            path: job.path,
-          );
-          sibling.markDone(
-            output: r.bytes,
-            width: r.width,
-            height: r.height,
-            quality: r.quality,
-            frames: r.frames,
-            notice: r.notice,
-          );
-          final at = _jobs.indexOf(job);
-          _jobs.insert(at < 0 ? _jobs.length : at + k, sibling);
+      if (WorkerPool.isSupported) {
+        _pool ??= await WorkerPool.create();
+        await _runPooled(targets, runSettings);
+      } else {
+        for (var i = 0; i < targets.length; i++) {
+          await _runOne(targets[i], runSettings);
         }
-        _changed();
       }
     } finally {
       _busy = false;
       _changed();
+    }
+  }
+
+  /// One job on the calling isolate. The web path and every test.
+  Future<void> _runOne(ImageJob job, ResizeSettings runSettings) async {
+    job.markRunning(0.0);
+    _changed();
+    final results = await processJob(job, runSettings);
+    _adoptExtraPages(job, results);
+    _changed();
+  }
+
+  /// Up to [pool] jobs at once, each on its own worker. Progress arrives over
+  /// the shared reply port while the UI isolate stays responsive.
+  Future<void> _runPooled(
+    List<ImageJob> targets,
+    ResizeSettings runSettings,
+  ) async {
+    final pool = _pool!;
+    final settingsJson = runSettings.toJson();
+    var next = 0;
+    await Future.wait([
+      for (var w = 0; w < pool.size; w++)
+        _drain(pool, targets, settingsJson, () => next++),
+    ]);
+  }
+
+  Future<void> _drain(
+    WorkerPool pool,
+    List<ImageJob> targets,
+    Map<String, dynamic> settingsJson,
+    int Function() take,
+  ) async {
+    while (true) {
+      final i = take();
+      if (i >= targets.length) return;
+      final job = targets[i];
+      job.markRunning(0.0);
+      _changed();
+      final id = pool.nextId();
+      try {
+        final maps = await pool.run(
+          IsolateMessage(
+            id: id,
+            settingsJson: settingsJson,
+            source: job.bytes,
+            name: job.name,
+          ),
+          job.markRunning,
+        );
+        final results = maps.map(EngineResult.fromMap).toList();
+        final first = results.first;
+        job.markDone(
+          output: first.bytes,
+          width: first.width,
+          height: first.height,
+          quality: first.quality,
+          frames: first.frames,
+          notice: first.notice,
+        );
+        _adoptExtraPages(job, results);
+      } on EngineError catch (e) {
+        job.markFailed(e.message);
+      } catch (e) {
+        job.markFailed('Unexpected error: $e');
+      }
+      _changed();
+    }
+  }
+
+  /// A multi-page document yields one result per page. The first stays on the
+  /// original job; the rest become siblings so each saves under its own name.
+  void _adoptExtraPages(ImageJob job, List<EngineResult> results) {
+    for (var k = 1; k < results.length; k++) {
+      final r = results[k];
+      final sibling = ImageJob(
+        id: '${job.id}-p${k + 1}',
+        name: _siblingName(job.name, k + 1),
+        bytes: job.bytes,
+        path: job.path,
+      );
+      sibling.markDone(
+        output: r.bytes,
+        width: r.width,
+        height: r.height,
+        quality: r.quality,
+        frames: r.frames,
+        notice: r.notice,
+      );
+      final at = _jobs.indexOf(job);
+      _jobs.insert(at < 0 ? _jobs.length : at + k, sibling);
     }
   }
 
@@ -266,6 +338,7 @@ class ResizeController extends ChangeNotifier {
     for (final j in _jobs) {
       j.dispose();
     }
+    _pool?.dispose();
     super.dispose();
   }
 }

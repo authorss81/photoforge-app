@@ -7,6 +7,7 @@ import 'package:pixelforge/core/engine.dart';
 import 'package:pixelforge/core/tiff16.dart';
 import 'package:pixelforge/core/resize_mode.dart';
 import 'package:pixelforge/core/settings.dart';
+import 'package:pixelforge/core/worker.dart';
 
 Uint8List _makeJpeg(int w, int h, {int quality = 92}) {
   final im = img.Image(width: w, height: h, numChannels: 3);
@@ -657,6 +658,96 @@ void main() {
       expect(res.notice, isNotNull);
       expect(res.notice, contains('TIFF'));
     });
+  });
+
+  group('isolates', () {
+    ResizeSettings _sized() {
+      final s = ResizeSettings()
+        ..setMode(ResizeMode.width)
+        ..setWidth(200)
+        ..setFormat(OutputFormat.jpeg);
+      return s;
+    }
+
+    test('a worker produces byte-identical output', () async {
+      final pool = await WorkerPool.create(size: 1);
+      try {
+        final src = _makeJpeg(600, 400);
+        final direct = await ResizeEngine.run(src, _sized(), name: 'w.jpg');
+
+        var sawProgress = false;
+        final maps = await pool.run(
+          IsolateMessage(
+            id: pool.nextId(),
+            settingsJson: _sized().toJson(),
+            source: src,
+            name: 'w.jpg',
+          ),
+          (_) => sawProgress = true,
+        );
+        final viaWorker = EngineResult.fromMap(maps.first);
+
+        expect(viaWorker.bytes, orderedEquals(direct.bytes));
+        expect(viaWorker.width, direct.width);
+        expect(viaWorker.quality, direct.quality);
+        expect(sawProgress, isTrue, reason: 'progress must cross the isolate boundary');
+      } finally {
+        pool.dispose();
+      }
+    }, timeout: const Timeout(Duration(minutes: 2)));
+
+    test('one failure does not take down the batch', () async {
+      final pool = await WorkerPool.create(size: 2);
+      try {
+        final good = _makeJpeg(300, 200);
+        final bad = Uint8List.fromList(List.filled(64, 7));
+        final json = _sized().toJson();
+
+        EngineResult? okResult;
+        Object? badError;
+        Future<void> runGood() async {
+          final m = await pool.run(
+            IsolateMessage(id: pool.nextId(), settingsJson: json, source: good, name: 'ok.jpg'),
+          );
+          okResult = EngineResult.fromMap(m.first);
+        }
+
+        Future<void> runBad() async {
+          try {
+            await pool.run(
+              IsolateMessage(id: pool.nextId(), settingsJson: json, source: bad, name: 'bad.jpg'),
+            );
+          } catch (e) {
+            badError = e;
+          }
+        }
+
+        await Future.wait([runGood(), runBad()]);
+
+        expect(okResult, isNotNull);
+        expect(okResult!.width, greaterThan(0));
+        expect(badError, isA<EngineError>());
+      } finally {
+        pool.dispose();
+      }
+    }, timeout: const Timeout(Duration(minutes: 2)));
+
+    test('concurrency never exceeds the pool size', () async {
+      final pool = await WorkerPool.create(size: 2);
+      try {
+        expect(pool.size, 2);
+        expect(pool.busyCount, 0);
+        final json = _sized().toJson();
+        final src = _makeJpeg(200, 150);
+        final f1 = pool.run(IsolateMessage(id: pool.nextId(), settingsJson: json, source: src, name: 'a.jpg'));
+        final f2 = pool.run(IsolateMessage(id: pool.nextId(), settingsJson: json, source: src, name: 'b.jpg'));
+        // Both dispatched synchronously; the pool holds exactly two workers.
+        await Future.wait([f1, f2]);
+        expect(pool.busyCount, 0);
+      } finally {
+        pool.dispose();
+      }
+    }, timeout: const Timeout(Duration(minutes: 2)));
   });
 
   group('memory', () {

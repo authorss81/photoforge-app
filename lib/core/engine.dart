@@ -24,6 +24,20 @@ class EngineResult {
     this.notice,
   });
 
+  /// Rebuilds a result from the plain map a worker isolate sends back.
+  /// Isolates can only carry primitives, maps and typed data, so results
+  /// cross the boundary as maps and are rehydrated here.
+  factory EngineResult.fromMap(Map<String, dynamic> m) => EngineResult(
+        bytes: m['bytes'] as Uint8List,
+        width: m['width'] as int,
+        height: m['height'] as int,
+        extension: m['extension'] as String,
+        quality: m['quality'] as int?,
+        metTarget: (m['metTarget'] as bool?) ?? true,
+        frames: (m['frames'] as int?) ?? 1,
+        notice: m['notice'] as String?,
+      );
+
   final Uint8List bytes;
   final int width;
   final int height;
