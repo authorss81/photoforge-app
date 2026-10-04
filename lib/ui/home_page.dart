@@ -813,27 +813,32 @@ class _SavedIndicatorState extends State<_SavedIndicator> {
 
   @override
   Widget build(BuildContext context) {
+    // Nothing at all when hidden, rather than a transparent copy of the label.
+    //
+    // An opacity of zero still takes part in layout, so a permanently invisible
+    // "Settings saved" was reserving its full width in the app bar on every
+    // screen. On a 360px phone that pushed the actions past the edge and
+    // overflowed by 12 pixels, which the emulator smoke test caught and no
+    // widget test had, because they never run at a real phone width.
+    if (!_visible) return const SizedBox.shrink();
+
     final theme = Theme.of(context);
-    return AnimatedOpacity(
-      opacity: _visible ? 1 : 0,
-      duration: const Duration(milliseconds: 180),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.check_circle_outline,
-            size: 15,
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          Icons.check_circle_outline,
+          size: 15,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+        const SizedBox(width: 5),
+        Text(
+          widget.label,
+          style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
-          const SizedBox(width: 5),
-          Text(
-            widget.label,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

@@ -22,6 +22,49 @@ import 'package:pixelforge/ui/diagnostics_page.dart';
 import 'package:pixelforge/ui/home_page.dart';
 import 'package:pixelforge/ui/theme.dart';
 
+/// Renders [child] at each real screen size and fails on any overflow.
+///
+/// A RenderFlex overflow is reported through the exception channel rather than
+/// thrown, so it is caught with `takeException`. The sizes are the real ones a
+/// phone uses, not one arbitrary test size.
+Future<void> _expectNoOverflow(WidgetTester tester) async {
+  const sizes = <(double, double)>[
+    (360, 640), // small Android
+    (411, 891), // Pixel 6
+    (800, 1280), // large Android
+  ];
+  final controller = ResizeController();
+  addTearDown(controller.dispose);
+
+  for (final (w, h) in sizes) {
+    tester.view.physicalSize = Size(w, h);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: Scaffold(
+          body: SizedBox(
+            width: w,
+            height: h,
+            child: HomePage(controller: controller),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.takeException(),
+      isNull,
+      reason:
+          'the layout must not overflow at ${w.toInt()}x${h.toInt()}. '
+          'A RenderFlex overflow means something does not fit a real screen.',
+    );
+  }
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -41,11 +84,11 @@ void main() {
     // interactive. If the platform had failed to start, this never runs.
     expect(find.byType(AppBar), findsOneWidget);
     expect(find.byType(HomePage), findsOneWidget);
-    expect(
-      tester.takeException(),
-      isNull,
-      reason: 'the app must launch without throwing',
-    );
+
+    // No layout overflow at any real screen size. This caught a genuine
+    // 12-pixel overflow on the default Android emulator, which no widget test
+    // had found: they run at whatever size the test happens to pick.
+    await _expectNoOverflow(tester);
   });
 
   testWidgets('an image is processed end to end on the device', (tester) async {
