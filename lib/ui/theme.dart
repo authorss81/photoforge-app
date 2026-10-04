@@ -1,5 +1,32 @@
 import 'package:flutter/material.dart';
 
+/// Single spacing, radius and type scale. Every padding, margin, gap and
+/// corner in lib/ui comes from here, so the layout has one rhythm instead of
+/// ad-hoc numbers. Add a step rather than inventing a value.
+abstract class AppSpacing {
+  static const double xs = 4.0;
+  static const double sm = 8.0;
+  static const double md = 12.0;
+  static const double lg = 16.0;
+  static const double xl = 24.0;
+  static const double xxl = 32.0;
+}
+
+abstract class AppRadius {
+  static const double sm = 8.0;
+  static const double md = 10.0;
+  static const double lg = 12.0;
+  static const double xl = 14.0;
+  static const double pill = 999.0;
+}
+
+abstract class AppType {
+  static const double label = 11.0;
+  static const double bodySm = 12.5;
+  static const double body = 13.0;
+  static const double title = 13.5;
+}
+
 class AppTheme {
   const AppTheme._();
 
@@ -23,7 +50,7 @@ class AppTheme {
         elevation: 0,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(AppRadius.xl),
           side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
         ),
         color: brightness == Brightness.dark
@@ -42,26 +69,26 @@ class AppTheme {
             ? const Color(0xFF232529)
             : const Color(0xFFF1F3F6),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           borderSide: BorderSide.none,
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           borderSide: BorderSide(color: scheme.primary, width: 1.5),
         ),
         contentPadding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 10,
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.sm,
         ),
       ),
       segmentedButtonTheme: SegmentedButtonThemeData(
         style: ButtonStyle(
           shape: WidgetStatePropertyAll(
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
           ),
         ),
       ),
@@ -71,7 +98,7 @@ class AppTheme {
         thumbShape: RoundSliderThumbShape(enabledThumbRadius: 7),
       ),
       chipTheme: base.chipTheme.copyWith(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
         side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.6)),
       ),
       listTileTheme: const ListTileThemeData(

@@ -11,6 +11,7 @@ import '../core/picker.dart';
 import '../core/resize_mode.dart';
 import '../core/settings.dart';
 import '../core/shared_content.dart';
+import '../l10n/app_localizations.dart';
 import 'theme.dart';
 import 'widgets/preview.dart';
 import 'widgets/queue_view.dart';
@@ -106,7 +107,7 @@ class _HomePageState extends State<HomePage> {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppRadius.sm),
             ),
             child: const Icon(
               Icons.crop_free_rounded,
@@ -114,14 +115,14 @@ class _HomePageState extends State<HomePage> {
               color: Colors.white,
             ),
           ),
-          const SizedBox(width: 10),
-          const Text(
-            'PixelForge',
-            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+          const SizedBox(width: AppSpacing.sm),
+          Text(
+            AppLocalizations.of(context).appName,
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: AppSpacing.md),
           Tooltip(
-            message: 'No network permission. Images never leave this device.',
+            message: AppLocalizations.of(context).offlineTooltip,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
@@ -138,7 +139,7 @@ class _HomePageState extends State<HomePage> {
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    'Offline',
+                    AppLocalizations.of(context).offline,
                     style: TextStyle(
                       fontSize: 10.5,
                       fontWeight: FontWeight.w700,
@@ -153,18 +154,18 @@ class _HomePageState extends State<HomePage> {
       ),
       actions: [
         IconButton(
-          tooltip: 'Add images',
+          tooltip: AppLocalizations.of(context).addImages,
           onPressed: controller.busy ? null : _addFiles,
           icon: const Icon(Icons.add_photo_alternate_outlined),
         ),
         IconButton(
-          tooltip: 'Settings',
+          tooltip: AppLocalizations.of(context).saveSettings,
           onPressed: () {
             controller.settings.save();
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Settings saved'),
-                duration: Duration(seconds: 1),
+              SnackBar(
+                content: Text(AppLocalizations.of(context).settingsSaved),
+                duration: const Duration(seconds: 1),
               ),
             );
           },
@@ -235,7 +236,10 @@ class _HomePageState extends State<HomePage> {
                 margin: const EdgeInsets.fromLTRB(10, 10, 10, 4),
                 child: Column(
                   children: [
-                    const PaneHeader('Output settings', icon: Icons.tune),
+PaneHeader(
+                    AppLocalizations.of(context).outputSettings,
+                    icon: Icons.tune,
+                  ),
                     Expanded(child: SettingsView(controller: controller)),
                   ],
                 ),
@@ -247,21 +251,21 @@ class _HomePageState extends State<HomePage> {
           height: 62,
           selectedIndex: _pane,
           onDestinationSelected: (i) => setState(() => _pane = i),
-          destinations: const [
+          destinations: [
             NavigationDestination(
-              icon: Icon(Icons.photo_library_outlined),
-              selectedIcon: Icon(Icons.photo_library),
-              label: 'Queue',
+              icon: const Icon(Icons.photo_library_outlined),
+              selectedIcon: const Icon(Icons.photo_library),
+              label: AppLocalizations.of(context).queue,
             ),
             NavigationDestination(
-              icon: Icon(Icons.preview_outlined),
-              selectedIcon: Icon(Icons.preview),
-              label: 'Preview',
+              icon: const Icon(Icons.preview_outlined),
+              selectedIcon: const Icon(Icons.preview),
+              label: AppLocalizations.of(context).preview,
             ),
             NavigationDestination(
-              icon: Icon(Icons.tune_outlined),
-              selectedIcon: Icon(Icons.tune),
-              label: 'Settings',
+              icon: const Icon(Icons.tune_outlined),
+              selectedIcon: const Icon(Icons.tune),
+              label: AppLocalizations.of(context).settings,
             ),
           ],
         ),
@@ -280,10 +284,11 @@ class _HomePageState extends State<HomePage> {
     if (files.isEmpty || !mounted) return;
 
     controller.addDroppedFiles(files);
+    final l10n = AppLocalizations.of(context);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          'Added ${files.length} file${files.length == 1 ? '' : 's'}',
+          files.length == 1 ? l10n.fileAdded : l10n.filesAdded(files.length),
         ),
       ),
     );
@@ -342,14 +347,14 @@ class _DropOverlay extends StatelessWidget {
                 size: 42,
                 color: scheme.primary,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: AppSpacing.md),
               Text(
-                'Drop to add',
+                AppLocalizations.of(context).dropToAdd,
                 style: Theme.of(context).textTheme.titleMedium,
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: AppSpacing.xs),
               Text(
-                'Folders are walked up to 3 levels deep',
+                AppLocalizations.of(context).dropDepthHint,
                 style: TextStyle(
                   fontSize: 11.5,
                   color: scheme.onSurfaceVariant,
@@ -455,13 +460,14 @@ class _PreviewPaneState extends State<_PreviewPane> {
               ? _liveBytes
               : (job.output ??
                     (job.hasSource ? job.bytes : job.thumbnail)));
+    final l10n = AppLocalizations.of(context);
     final label = job == null
         ? null
         : (_view == _PreviewMode.before
-              ? 'Original'
+              ? l10n.original
               : (live
-                    ? 'Live'
-                    : (job.output != null ? 'Result' : 'Preview')));
+                    ? l10n.live
+                    : (job.output != null ? l10n.result : l10n.preview)));
 
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -469,10 +475,10 @@ class _PreviewPaneState extends State<_PreviewPane> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           PaneHeader(
-            job?.name ?? 'Preview',
+            job?.name ?? l10n.preview,
             icon: Icons.preview_outlined,
             subtitle: job == null
-                ? 'Nothing selected'
+                ? l10n.nothingSelected
                 : '${job.sourceSizeLabel}  ·  ${formatBytes(job.inputBytes)}',
             trailing: job == null
                 ? null
@@ -481,18 +487,27 @@ class _PreviewPaneState extends State<_PreviewPane> {
                     style: const ButtonStyle(
                       visualDensity: VisualDensity.compact,
                     ),
-                    segments: const [
+                    segments: [
                       ButtonSegment(
                         value: _PreviewMode.before,
-                        label: Text('Before', style: TextStyle(fontSize: 11)),
+                        label: Text(
+                          l10n.before,
+                          style: const TextStyle(fontSize: 11),
+                        ),
                       ),
                       ButtonSegment(
                         value: _PreviewMode.split,
-                        label: Text('Split', style: TextStyle(fontSize: 11)),
+                        label: Text(
+                          l10n.split,
+                          style: const TextStyle(fontSize: 11),
+                        ),
                       ),
                       ButtonSegment(
                         value: _PreviewMode.after,
-                        label: Text('After', style: TextStyle(fontSize: 11)),
+                        label: Text(
+                          l10n.after,
+                          style: const TextStyle(fontSize: 11),
+                        ),
                       ),
                     ],
                     selected: {_view},
@@ -504,7 +519,7 @@ class _PreviewPaneState extends State<_PreviewPane> {
           ),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(AppSpacing.md),
               child: LargePreview(
                 before: original,
                 after: _view == _PreviewMode.before ? original : processed,
@@ -518,8 +533,7 @@ class _PreviewPaneState extends State<_PreviewPane> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: Text(
-                'Add images, choose an output size, then press Process. '
-                'Everything runs on this device.',
+                AppLocalizations.of(context).addImagesEmpty,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -540,6 +554,7 @@ class _ResultBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     final s = controller.settings;
     final predicted = computeTargetSize(
       s.spec,
@@ -555,39 +570,39 @@ class _ResultBar extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _Stat(label: 'Target', value: '$predicted', icon: Icons.crop),
+          _Stat(label: l10n.target, value: '$predicted', icon: Icons.crop),
           _Stat(
-            label: 'Format',
+            label: l10n.format,
             value: job.output != null
                 ? _extOf(job)
                 : (s.format == OutputFormat.keep
-                      ? 'keep'
+                      ? l10n.keepFormat
                       : s.format.extension!.toUpperCase()),
             icon: Icons.description_outlined,
           ),
           if (job.output != null)
             _Stat(
-              label: 'Size',
+              label: l10n.sizeLabel,
               value: formatBytes(job.outputBytes),
               icon: Icons.sd_storage_outlined,
               highlight: true,
             ),
           if (job.output != null)
             _Stat(
-              label: 'Quality',
-              value: job.solvedQuality?.toString() ?? 'lossless',
+              label: l10n.qualityLabel,
+              value: job.solvedQuality?.toString() ?? l10n.lossless,
               icon: Icons.tune,
             ),
           if (job.savedRatio != null && job.savedRatio! > 0)
             _Stat(
-              label: 'Saved',
+              label: l10n.saved,
               value: '-${(job.savedRatio! * 100).round()}%',
               icon: Icons.savings_outlined,
               highlight: true,
             ),
           if (job.output != null && SharedContent.isMobile)
             IconButton(
-              tooltip: 'Save to gallery',
+              tooltip: l10n.saveToGallery,
               onPressed: () => _saveToGallery(context),
               icon: const Icon(Icons.save_alt_outlined, size: 20),
             ),
@@ -600,10 +615,11 @@ class _ResultBar extends StatelessWidget {
     final output = job.output;
     if (output == null) return;
     final messenger = ScaffoldMessenger.of(context);
+    final l10n = AppLocalizations.of(context);
     final error = await SharedContent.saveToGallery(output, job.name);
     if (!context.mounted) return;
     messenger.showSnackBar(
-      SnackBar(content: Text(error ?? 'Saved ${job.name} to the gallery')),
+      SnackBar(content: Text(error ?? l10n.savedToGallery(job.name))),
     );
   }
 

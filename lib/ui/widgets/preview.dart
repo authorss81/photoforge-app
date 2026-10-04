@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../theme.dart';
+
 import '../../core/engine.dart';
 
 /// Lazily generated, once-per-mount preview thumbnail.
@@ -138,7 +140,7 @@ class _LargePreviewState extends State<LargePreview> {
         color: theme.colorScheme.surfaceContainerHighest.withValues(
           alpha: 0.55,
         ),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
         border: Border.all(color: theme.dividerColor),
       ),
       clipBehavior: Clip.antiAlias,
@@ -155,7 +157,7 @@ class _LargePreviewState extends State<LargePreview> {
                     size: 40,
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: AppSpacing.sm),
                   Text(
                     'Nothing to preview',
                     style: theme.textTheme.bodyMedium?.copyWith(

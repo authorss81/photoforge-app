@@ -5,6 +5,7 @@ import '../../core/controller.dart';
 import '../../core/presets.dart';
 import '../../core/resize_mode.dart';
 import '../../core/settings.dart';
+import '../../l10n/app_localizations.dart';
 import '../theme.dart';
 
 class SettingsView extends StatelessWidget {
@@ -15,6 +16,7 @@ class SettingsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = controller.settings;
+    final l10n = AppLocalizations.of(context);
     return AnimatedBuilder(
       animation: s,
       builder: (context, _) {
@@ -22,29 +24,29 @@ class SettingsView extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(14, 4, 14, 28),
           children: [
             _presets(context, s),
-            const SectionLabel('Size'),
+            SectionLabel(l10n.size),
             _size(context, s),
-            _outputFormat(s),
+            _outputFormat(context, s),
             if (s.format.supportsFrames || s.format == OutputFormat.keep)
               _animation(context, s),
             if (s.format.supportsQuality || s.format == OutputFormat.keep)
               _quality(context, s),
-            if (s.format == OutputFormat.png) _pngLevel(s),
-            if (s.format == OutputFormat.webp) _webp(s),
+            if (s.format == OutputFormat.png) _pngLevel(context, s),
+            if (s.format == OutputFormat.webp) _webp(context, s),
             if (s.format == OutputFormat.jpeg || s.format == OutputFormat.keep)
-              _chroma(s),
+              _chroma(context, s),
             _metadata(context, s),
-            const SectionLabel('Transform'),
-            _transform(s),
-            const SectionLabel('Adjust'),
+            SectionLabel(l10n.transform),
+            _transform(context, s),
+            SectionLabel(l10n.adjust),
             _adjustments(context, s),
             _filters(context, s),
-            const SectionLabel('Watermark'),
+            SectionLabel(l10n.watermark),
             _watermark(context, s),
-            const SectionLabel('Output'),
+            SectionLabel(l10n.output),
             _naming(context, s),
             _destination(context, s),
-            const SectionLabel('Extra outputs'),
+            SectionLabel(l10n.extraOutputs),
             _extraOutputs(context, s),
           ],
         );
@@ -54,15 +56,16 @@ class SettingsView extends StatelessWidget {
 
   // --------------------------------------------------------------- presets
   Widget _presets(BuildContext context, ResizeSettings s) {
+    final l10n = AppLocalizations.of(context);
     final groups = Presets.groups;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SectionLabel('Preset'),
+        SectionLabel(l10n.preset),
         DropdownButtonFormField<String>(
           initialValue: s.presetName,
           isExpanded: true,
-          hint: const Text('Custom'),
+          hint: Text(AppLocalizations.of(context).custom),
           decoration: const InputDecoration(
             prefixIcon: Icon(Icons.auto_awesome_outlined, size: 19),
           ),
@@ -94,7 +97,7 @@ class SettingsView extends StatelessWidget {
             if (p != null) s.applyPreset(p);
           },
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSpacing.sm),
         Wrap(
           spacing: 6,
           runSpacing: 6,
@@ -119,6 +122,7 @@ class SettingsView extends StatelessWidget {
 
   // ------------------------------------------------------------------ size
   Widget _size(BuildContext context, ResizeSettings s) {
+    final l10n = AppLocalizations.of(context);
     final showPercent = s.mode == ResizeMode.percent;
     final showBox =
         s.mode != ResizeMode.percent && s.mode != ResizeMode.original;
@@ -130,7 +134,7 @@ class SettingsView extends StatelessWidget {
       children: [
         DropdownButtonFormField<ResizeMode>(
           initialValue: s.mode,
-          decoration: const InputDecoration(labelText: 'Mode'),
+          decoration: InputDecoration(labelText: l10n.mode),
           items: [
             for (final m in ResizeMode.values)
               DropdownMenuItem(value: m, child: Text(m.label)),
@@ -140,9 +144,9 @@ class SettingsView extends StatelessWidget {
           },
         ),
         if (showPercent) ...[
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.md),
           _Slider(
-            label: 'Scale',
+            label: l10n.scale,
             value: s.percent.toDouble(),
             min: 1,
             max: 400,
@@ -151,26 +155,26 @@ class SettingsView extends StatelessWidget {
           ),
         ],
         if (showBox) ...[
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.md),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (showWidth)
                 Expanded(
                   child: _NumberField(
-                    label: 'Width',
+                    label: l10n.width,
                     value: s.width,
                     onChanged: s.setWidth,
                   ),
                 ),
-              const SizedBox(width: 8),
+              const SizedBox(width: AppSpacing.sm),
               if (showWidth && showHeight)
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
                   child: IconButton(
                     tooltip: s.linkDimensions
-                        ? 'Unlink dimensions'
-                        : 'Lock aspect ratio',
+                        ? l10n.unlinkDimensions
+                        : l10n.linkAspect,
                     onPressed: () => s.setLinkDimensions(!s.linkDimensions),
                     icon: Icon(
                       s.linkDimensions ? Icons.link : Icons.link_off,
@@ -184,7 +188,7 @@ class SettingsView extends StatelessWidget {
               if (showHeight)
                 Expanded(
                   child: _NumberField(
-                    label: 'Height',
+                    label: l10n.height,
                     value: s.height,
                     onChanged: s.setHeight,
                   ),
@@ -193,7 +197,7 @@ class SettingsView extends StatelessWidget {
           ),
           if (s.mode == ResizeMode.exactFit ||
               s.mode == ResizeMode.exactCrop) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: AppSpacing.sm),
             _PadColorRow(settings: s),
           ],
         ],
@@ -202,12 +206,12 @@ class SettingsView extends StatelessWidget {
           dense: true,
           value: s.allowUpscale,
           onChanged: s.setAllowUpscale,
-          title: const Text(
-            'Allow upscaling',
+          title: Text(
+            l10n.allowUpscale,
             style: TextStyle(fontSize: 13.5),
           ),
           subtitle: Text(
-            'Off keeps images from being enlarged',
+            l10n.allowUpscaleHint,
             style: TextStyle(
               fontSize: 11,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -219,18 +223,19 @@ class SettingsView extends StatelessWidget {
   }
 
   // ---------------------------------------------------------------- output
-  Widget _outputFormat(ResizeSettings s) {
+  Widget _outputFormat(BuildContext context, ResizeSettings s) {
+    final l10n = AppLocalizations.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SectionLabel('Output'),
+        SectionLabel(l10n.output),
         SegmentedButton<OutputFormat>(
           showSelectedIcon: false,
           segments: [
             for (final f in OutputFormat.values)
               ButtonSegment(
                 value: f,
-                label: Text(f.extension?.toUpperCase() ?? 'KEEP'),
+                label: Text(f.extension?.toUpperCase() ?? l10n.keepAllCaps),
               ),
           ],
           selected: {s.format},
@@ -241,15 +246,15 @@ class SettingsView extends StatelessWidget {
   }
 
   Widget _animation(BuildContext context, ResizeSettings s) {
+    final l10n = AppLocalizations.of(context);
     return SwitchListTile(
       contentPadding: EdgeInsets.zero,
       dense: true,
       value: s.preserveAnimation,
       onChanged: s.setPreserveAnimation,
-      title: const Text('Preserve animation', style: TextStyle(fontSize: 13.5)),
+      title: Text(AppLocalizations.of(context).preserveAnimation, style: TextStyle(fontSize: 13.5)),
       subtitle: Text(
-        'Every frame of an animated GIF or WebP is carried through. '
-        'Turning it off flattens to the first frame.',
+        l10n.preserveAnimationBody,
         style: TextStyle(
           fontSize: 11,
           color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -259,6 +264,7 @@ class SettingsView extends StatelessWidget {
   }
 
   Widget _quality(BuildContext context, ResizeSettings s) {
+    final l10n = AppLocalizations.of(context);
     final kb = s.targetKb;
     final isKb = kb != null && s.format.supportsQuality;
     return Column(
@@ -269,7 +275,7 @@ class SettingsView extends StatelessWidget {
           children: [
             Expanded(
               child: _Slider(
-                label: isKb ? 'Quality (auto)' : 'Quality',
+                label: isKb ? l10n.qualityAuto : l10n.quality,
                 value: s.quality.toDouble(),
                 min: 1,
                 max: 100,
@@ -278,11 +284,11 @@ class SettingsView extends StatelessWidget {
                 onChanged: (v) => s.setQuality(v.round()),
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: AppSpacing.sm),
             SizedBox(
               width: 118,
               child: _NumberField(
-                label: 'Max KB',
+                label: l10n.maxKb,
                 value: kb ?? 0,
                 allowZeroAsNull: true,
                 hint: 'off',
@@ -306,9 +312,10 @@ class SettingsView extends StatelessWidget {
     );
   }
 
-  Widget _pngLevel(ResizeSettings s) {
+  Widget _pngLevel(BuildContext context, ResizeSettings s) {
+    final l10n = AppLocalizations.of(context);
     return _Slider(
-      label: 'PNG compression',
+      label: l10n.pngCompression,
       value: s.pngLevel.toDouble(),
       min: 0,
       max: 9,
@@ -317,7 +324,8 @@ class SettingsView extends StatelessWidget {
     );
   }
 
-  Widget _webp(ResizeSettings s) {
+  Widget _webp(BuildContext context, ResizeSettings s) {
+    final l10n = AppLocalizations.of(context);
     return Column(
       children: [
         SwitchListTile(
@@ -325,11 +333,11 @@ class SettingsView extends StatelessWidget {
           dense: true,
           value: s.webpLossless,
           onChanged: s.setWebpLossless,
-          title: const Text('Lossless WebP', style: TextStyle(fontSize: 13.5)),
+          title: Text(AppLocalizations.of(context).losslessWebp, style: TextStyle(fontSize: 13.5)),
         ),
         if (!s.webpLossless)
           _Slider(
-            label: 'Encode effort',
+            label: l10n.encodeEffort,
             value: s.webpMethod.toDouble(),
             min: 0,
             max: 6,
@@ -340,14 +348,15 @@ class SettingsView extends StatelessWidget {
     );
   }
 
-  Widget _chroma(ResizeSettings s) {
+  Widget _chroma(BuildContext context, ResizeSettings s) {
+    final l10n = AppLocalizations.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSpacing.sm),
         DropdownButtonFormField<ChromaMode>(
           initialValue: s.chroma,
-          decoration: const InputDecoration(labelText: 'JPEG chroma'),
+          decoration: InputDecoration(labelText: l10n.jpegChroma),
           items: [
             for (final c in ChromaMode.values)
               DropdownMenuItem(value: c, child: Text(c.label)),
@@ -379,6 +388,7 @@ class SettingsView extends StatelessWidget {
   }
 
   Widget _metadata(BuildContext context, ResizeSettings s) {
+    final l10n = AppLocalizations.of(context);
     return Column(
       children: [
         SwitchListTile(
@@ -386,14 +396,14 @@ class SettingsView extends StatelessWidget {
           dense: true,
           value: s.stripMetadata,
           onChanged: s.setStripMetadata,
-          title: const Text(
-            'Strip EXIF / metadata',
+          title: Text(
+            l10n.stripMetadata,
             style: TextStyle(fontSize: 13.5),
           ),
           subtitle: Text(
             s.stripMetadata
-                ? 'Choose what goes below'
-                : 'Everything is kept as-is',
+                ? l10n.stripMetadataHint
+                : l10n.stripMetadataOff,
             style: TextStyle(
               fontSize: 11,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -405,7 +415,7 @@ class SettingsView extends StatelessWidget {
             context,
             value: s.stripGps,
             onChanged: s.setStripGps,
-            label: 'Location (GPS)',
+            label: l10n.stripLocation,
           ),
           _metadataToggle(
             context,
@@ -417,13 +427,13 @@ class SettingsView extends StatelessWidget {
             context,
             value: s.stripTimestamps,
             onChanged: s.setStripTimestamps,
-            label: 'Dates and times taken',
+            label: l10n.stripDates,
           ),
           _metadataToggle(
             context,
             value: s.stripThumbnail,
             onChanged: s.setStripThumbnail,
-            label: 'Embedded thumbnail',
+            label: l10n.stripThumbnail,
           ),
         ],
         if (s.format == OutputFormat.keep)
@@ -432,8 +442,8 @@ class SettingsView extends StatelessWidget {
             dense: true,
             value: s.keepExtensionWhenKeepFormat,
             onChanged: s.setKeepExtensionWhenKeepFormat,
-            title: const Text(
-              'Keep original extension',
+            title: Text(
+              l10n.keepExtension,
               style: TextStyle(fontSize: 13.5),
             ),
           ),
@@ -442,7 +452,8 @@ class SettingsView extends StatelessWidget {
   }
 
   // ------------------------------------------------------------- transform
-  Widget _transform(ResizeSettings s) {
+  Widget _transform(BuildContext context, ResizeSettings s) {
+    final l10n = AppLocalizations.of(context);
     return Row(
       children: [
         Expanded(
@@ -451,25 +462,25 @@ class SettingsView extends StatelessWidget {
             icon: const Icon(Icons.rotate_90_degrees_cw_outlined, size: 17),
             label: Text(
               s.rotateQuarterTurns == 0
-                  ? 'Rotate'
+                  ? l10n.rotate
                   : '${s.rotateQuarterTurns * 90}°',
             ),
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: AppSpacing.sm),
         Expanded(
           child: OutlinedButton.icon(
             onPressed: () => s.setFlipH(!s.flipH),
             icon: const Icon(Icons.flip, size: 17),
-            label: Text(s.flipH ? 'Unflip H' : 'Flip H'),
+            label: Text(s.flipH ? l10n.unflipH : l10n.flipH),
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: AppSpacing.sm),
         Expanded(
           child: OutlinedButton.icon(
             onPressed: () => s.setFlipV(!s.flipV),
             icon: const Icon(Icons.flip_camera_android_outlined, size: 17),
-            label: Text(s.flipV ? 'Unflip V' : 'Flip V'),
+            label: Text(s.flipV ? l10n.unflipV : l10n.flipV),
           ),
         ),
       ],
@@ -478,6 +489,7 @@ class SettingsView extends StatelessWidget {
 
   // ------------------------------------------------------------ adjustments
   Widget _adjustments(BuildContext context, ResizeSettings s) {
+    final l10n = AppLocalizations.of(context);
     final a = s.adjustments;
     void set(Adjustments next) => s.setAdjustments(next);
 
@@ -487,7 +499,7 @@ class SettingsView extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                'Auto levels when untouched',
+                l10n.autoLevels,
                 style: TextStyle(
                   fontSize: 11,
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -496,12 +508,12 @@ class SettingsView extends StatelessWidget {
             ),
             TextButton(
               onPressed: s.resetAdjustments,
-              child: const Text('Reset'),
+              child: Text(AppLocalizations.of(context).reset),
             ),
           ],
         ),
         _Slider(
-          label: 'Brightness',
+          label: l10n.brightness,
           value: a.brightness.toDouble(),
           min: -100,
           max: 100,
@@ -509,7 +521,7 @@ class SettingsView extends StatelessWidget {
           onChanged: (v) => set(a.copyWith(brightness: v)),
         ),
         _Slider(
-          label: 'Contrast',
+          label: l10n.contrast,
           value: a.contrast.toDouble(),
           min: -100,
           max: 100,
@@ -517,7 +529,7 @@ class SettingsView extends StatelessWidget {
           onChanged: (v) => set(a.copyWith(contrast: v)),
         ),
         _Slider(
-          label: 'Saturation',
+          label: l10n.saturation,
           value: a.saturation.toDouble(),
           min: -100,
           max: 100,
@@ -525,7 +537,7 @@ class SettingsView extends StatelessWidget {
           onChanged: (v) => set(a.copyWith(saturation: v)),
         ),
         _Slider(
-          label: 'Exposure',
+          label: l10n.exposure,
           value: a.exposure.toDouble(),
           min: -100,
           max: 100,
@@ -533,7 +545,7 @@ class SettingsView extends StatelessWidget {
           onChanged: (v) => set(a.copyWith(exposure: v)),
         ),
         _Slider(
-          label: 'Hue',
+          label: l10n.hue,
           value: a.hue.toDouble(),
           min: -180,
           max: 180,
@@ -541,7 +553,7 @@ class SettingsView extends StatelessWidget {
           onChanged: (v) => set(a.copyWith(hue: v)),
         ),
         _Slider(
-          label: 'Gamma',
+          label: l10n.gamma,
           value: a.gamma.toDouble(),
           min: 10,
           max: 300,
@@ -549,7 +561,7 @@ class SettingsView extends StatelessWidget {
           onChanged: (v) => set(a.copyWith(gamma: v)),
         ),
         _Slider(
-          label: 'Amount',
+          label: l10n.amount,
           value: a.amount.toDouble(),
           min: 0,
           max: 100,
@@ -561,10 +573,11 @@ class SettingsView extends StatelessWidget {
   }
 
   Widget _filters(BuildContext context, ResizeSettings s) {
+    final l10n = AppLocalizations.of(context);
     return Column(
       children: [
         _Slider(
-          label: 'Grayscale',
+          label: l10n.grayscale,
           value: s.grayscale,
           min: 0,
           max: 1,
@@ -572,7 +585,7 @@ class SettingsView extends StatelessWidget {
           onChanged: s.setGrayscale,
         ),
         _Slider(
-          label: 'Sepia',
+          label: l10n.sepia,
           value: s.sepia,
           min: 0,
           max: 1,
@@ -580,7 +593,7 @@ class SettingsView extends StatelessWidget {
           onChanged: s.setSepia,
         ),
         _Slider(
-          label: 'Blur radius',
+          label: l10n.blurRadius,
           value: s.blurRadius,
           min: 0,
           max: 40,
@@ -588,7 +601,7 @@ class SettingsView extends StatelessWidget {
           onChanged: s.setBlurRadius,
         ),
         _Slider(
-          label: 'Sharpen',
+          label: l10n.sharpen,
           value: s.sharpenAmount,
           min: 0,
           max: 2,
@@ -601,6 +614,7 @@ class SettingsView extends StatelessWidget {
 
   // -------------------------------------------------------------- watermark
   Widget _watermark(BuildContext context, ResizeSettings s) {
+    final l10n = AppLocalizations.of(context);
     final w = s.watermark;
     return Column(
       children: [
@@ -610,14 +624,14 @@ class SettingsView extends StatelessWidget {
               child: _SyncedTextField(
                 value: w.text,
                 hint: '© yourname',
-                label: 'Text',
+                label: l10n.watermarkText,
                 icon: Icons.text_fields,
                 onChanged: (v) => s.setWatermark(
                   w.copyWith(text: v, enabled: v.trim().isNotEmpty),
                 ),
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: AppSpacing.sm),
             Switch(
               value: w.active,
               onChanged: (v) => s.setWatermark(w.copyWith(enabled: v)),
@@ -625,39 +639,39 @@ class SettingsView extends StatelessWidget {
           ],
         ),
         if (w.active) ...[
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.md),
           DropdownButtonFormField<WatermarkCorner>(
             initialValue: w.corner,
-            decoration: const InputDecoration(labelText: 'Position'),
-            items: const [
+            decoration: InputDecoration(labelText: l10n.position),
+            items: [
               DropdownMenuItem(
                 value: WatermarkCorner.topLeft,
-                child: Text('Top left'),
+                child: Text(l10n.topLeft),
               ),
               DropdownMenuItem(
                 value: WatermarkCorner.topRight,
-                child: Text('Top right'),
+                child: Text(l10n.topRight),
               ),
               DropdownMenuItem(
                 value: WatermarkCorner.center,
-                child: Text('Center'),
+                child: Text(l10n.center),
               ),
               DropdownMenuItem(
                 value: WatermarkCorner.bottomLeft,
-                child: Text('Bottom left'),
+                child: Text(l10n.bottomLeft),
               ),
               DropdownMenuItem(
                 value: WatermarkCorner.bottomRight,
-                child: Text('Bottom right'),
+                child: Text(l10n.bottomRight),
               ),
             ],
             onChanged: (v) {
               if (v != null) s.setWatermark(w.copyWith(corner: v));
             },
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.md),
           _Slider(
-            label: 'Size',
+            label: l10n.watermarkSize,
             value: w.scale,
             min: 0.01,
             max: 0.25,
@@ -665,7 +679,7 @@ class SettingsView extends StatelessWidget {
             onChanged: (v) => s.setWatermark(w.copyWith(scale: v)),
           ),
           _Slider(
-            label: 'Opacity',
+            label: l10n.opacity,
             value: w.opacity,
             min: 0,
             max: 1,
@@ -673,7 +687,7 @@ class SettingsView extends StatelessWidget {
             onChanged: (v) => s.setWatermark(w.copyWith(opacity: v)),
           ),
           _Slider(
-            label: 'Margin',
+            label: l10n.margin,
             value: w.margin,
             min: 0,
             max: 0.2,
@@ -687,17 +701,18 @@ class SettingsView extends StatelessWidget {
 
   // ----------------------------------------------------------------- output
   Widget _naming(BuildContext context, ResizeSettings s) {
+    final l10n = AppLocalizations.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _SyncedTextField(
           value: s.nameTemplate,
           hint: '{name}',
-          label: 'Filename template',
+          label: l10n.filenameTemplate,
           icon: Icons.tag,
           onChanged: s.setNameTemplate,
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSpacing.sm),
         Wrap(
           spacing: 5,
           runSpacing: 5,
@@ -716,8 +731,8 @@ class SettingsView extends StatelessWidget {
           dense: true,
           value: s.overwrite,
           onChanged: s.setOverwrite,
-          title: const Text(
-            'Overwrite existing files',
+          title: Text(
+            l10n.overwrite,
             style: TextStyle(fontSize: 13.5),
           ),
         ),
@@ -726,8 +741,8 @@ class SettingsView extends StatelessWidget {
           dense: true,
           value: s.writeImmediately,
           onChanged: s.setWriteImmediately,
-          title: const Text(
-            'Write each file as it finishes',
+          title: Text(
+            l10n.writeImmediately,
             style: TextStyle(fontSize: 13.5),
           ),
           subtitle: Text(
@@ -739,7 +754,7 @@ class SettingsView extends StatelessWidget {
           ),
         ),
         _Slider(
-          label: 'Memory budget',
+          label: l10n.memoryBudget,
           value: s.memoryBudgetMb.toDouble(),
           min: 64,
           max: 2048,
@@ -751,6 +766,7 @@ class SettingsView extends StatelessWidget {
   }
 
   Widget _destination(BuildContext context, ResizeSettings s) {
+    final l10n = AppLocalizations.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -759,7 +775,7 @@ class SettingsView extends StatelessWidget {
             Expanded(
               child: Text(
                 s.outputDirectory.isEmpty
-                    ? 'Saves to the current folder'
+                    ? l10n.savesToCurrentFolder
                     : s.outputDirectory,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
@@ -773,7 +789,7 @@ class SettingsView extends StatelessWidget {
               TextButton.icon(
                 onPressed: controller.chooseOutputDirectory,
                 icon: const Icon(Icons.folder_open_outlined, size: 16),
-                label: const Text('Browse'),
+                label: Text(AppLocalizations.of(context).browse),
               ),
           ],
         ),
@@ -782,6 +798,7 @@ class SettingsView extends StatelessWidget {
   }
 
   Widget _extraOutputs(BuildContext context, ResizeSettings s) {
+    final l10n = AppLocalizations.of(context);
     final extras = s.extraOutputs;
     final available = Presets.all
         .where((p) => !extras.any((e) => e.name == p.name))
@@ -797,7 +814,7 @@ class SettingsView extends StatelessWidget {
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSpacing.sm),
         for (final e in extras)
           Card(
             margin: const EdgeInsets.only(bottom: 6),
@@ -823,9 +840,9 @@ class SettingsView extends StatelessWidget {
         if (available.isNotEmpty)
           DropdownButtonFormField<String>(
             isExpanded: true,
-            decoration: const InputDecoration(
-              labelText: 'Add an output',
-              prefixIcon: Icon(Icons.add, size: 19),
+            decoration: InputDecoration(
+              labelText: l10n.addOutput,
+              prefixIcon: const Icon(Icons.add, size: 19),
             ),
             items: [
               for (final p in available)
@@ -840,8 +857,8 @@ class SettingsView extends StatelessWidget {
         else
           Text(
             extras.isEmpty
-                ? 'Add presets to export alongside the main output.'
-                : 'Every preset is already an output.',
+                ? l10n.extraOutputsEmpty
+                : l10n.extraOutputsFull,
             style: TextStyle(
               fontSize: 11,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -852,7 +869,7 @@ class SettingsView extends StatelessWidget {
             alignment: Alignment.centerRight,
             child: TextButton(
               onPressed: s.clearExtraOutputs,
-              child: const Text('Clear all'),
+              child: Text(AppLocalizations.of(context).clearAll),
             ),
           ),
       ],
@@ -926,14 +943,15 @@ class _PadColorRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = settings;
+    final l10n = AppLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
     return Row(
       children: [
         Text(
-          'Pad colour',
+          l10n.padColour,
           style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
         ),
-        const SizedBox(width: 10),
+        const SizedBox(width: AppSpacing.sm),
         Expanded(
           child: Wrap(
             spacing: 6,

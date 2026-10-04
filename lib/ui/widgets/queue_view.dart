@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/controller.dart';
 import '../../core/job.dart';
+import '../../l10n/app_localizations.dart';
 import '../theme.dart';
 import 'preview.dart';
 
@@ -14,27 +15,28 @@ class QueueView extends StatelessWidget {
   Widget build(BuildContext context) {
     final jobs = controller.jobs;
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
 
     return Column(
       children: [
         PaneHeader(
-          'Queue',
+          l10n.queue,
           icon: Icons.photo_library_outlined,
           subtitle: jobs.isEmpty
-              ? 'No images yet'
-              : '${jobs.length} file${jobs.length == 1 ? '' : 's'}  ·  ${formatBytes(controller.totalInputBytes)}',
+              ? l10n.noImages
+              : '${l10n.filesQueued(jobs.length)}  ·  ${formatBytes(controller.totalInputBytes)}',
           trailing: jobs.isEmpty
               ? null
               : Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     IconButton(
-                      tooltip: 'Re-run everything',
+                      tooltip: AppLocalizations.of(context).rerunEverything,
                       onPressed: controller.busy ? null : controller.resetQueue,
                       icon: const Icon(Icons.refresh, size: 18),
                     ),
                     PopupMenuButton<String>(
-                      tooltip: 'Queue actions',
+                      tooltip: AppLocalizations.of(context).queueActions,
                       icon: const Icon(Icons.more_vert, size: 18),
                       onSelected: (v) {
                         switch (v) {
@@ -44,14 +46,16 @@ class QueueView extends StatelessWidget {
                             controller.clearAll();
                         }
                       },
-                      itemBuilder: (context) => const [
+                      itemBuilder: (context) => [
                         PopupMenuItem(
                           value: 'clearDone',
-                          child: Text('Remove finished'),
+                          child: Text(
+                            AppLocalizations.of(context).removeFinished,
+                          ),
                         ),
                         PopupMenuItem(
                           value: 'clearAll',
-                          child: Text('Clear all'),
+                          child: Text(AppLocalizations.of(context).clearAll),
                         ),
                       ],
                     ),
@@ -106,11 +110,11 @@ class _EmptyQueue extends StatelessWidget {
               size: 38,
               color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
             ),
-            const SizedBox(height: 12),
-            Text('Drop images here', style: theme.textTheme.bodyMedium),
-            const SizedBox(height: 4),
+            const SizedBox(height: AppSpacing.md),
+            Text(AppLocalizations.of(context).dropImagesHere, style: theme.textTheme.bodyMedium),
+            const SizedBox(height: AppSpacing.xs),
             Text(
-              'or use the Add button above',
+              AppLocalizations.of(context).dropImagesHint,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -150,15 +154,15 @@ class _JobTile extends StatelessWidget {
         color: selected
             ? scheme.primaryContainer.withValues(alpha: 0.55)
             : null,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(AppRadius.md),
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(AppSpacing.sm),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -167,7 +171,7 @@ class _JobTile extends StatelessWidget {
                   height: 46,
                   child: ImageThumb(bytes: job.bytes, maxDim: 96),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -196,7 +200,7 @@ class _JobTile extends StatelessWidget {
                           ? IconButton(
                               padding: EdgeInsets.zero,
                               visualDensity: VisualDensity.compact,
-                              tooltip: 'Remove',
+                              tooltip: AppLocalizations.of(context).remove,
                               onPressed: onRemove,
                               icon: Icon(
                                 Icons.close,
@@ -236,7 +240,7 @@ class _StatusLine extends StatelessWidget {
               child: LinearProgressIndicator(value: job.progress, minHeight: 3),
             ),
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: AppSpacing.xs),
           Text(
             '${(job.progress * 100).round()}%',
             style: theme.textTheme.bodySmall,
@@ -287,7 +291,7 @@ class _StatusLine extends StatelessWidget {
 
     if (job.status == JobStatus.failed) {
       return Text(
-        job.error ?? 'Failed',
+        job.error ?? AppLocalizations.of(context).failed,
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
         style: theme.textTheme.bodySmall?.copyWith(
@@ -359,13 +363,13 @@ class _QueueFooter extends StatelessWidget {
                     size: 15,
                     color: Colors.green.shade600,
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: AppSpacing.xs),
                   Text(
                     '${controller.doneCount} done',
                     style: theme.textTheme.bodySmall,
                   ),
                   if (saved != null) ...[
-                    const SizedBox(width: 10),
+                    const SizedBox(width: AppSpacing.sm),
                     Icon(
                       Icons.savings_outlined,
                       size: 15,
@@ -400,7 +404,7 @@ class _QueueFooter extends StatelessWidget {
                           foregroundColor: theme.colorScheme.onError,
                         ),
                         icon: const Icon(Icons.stop_rounded, size: 19),
-                        label: const Text('Cancel'),
+                        label: Text(AppLocalizations.of(context).cancel),
                       )
                     : FilledButton.icon(
                         onPressed: controller.pendingCount == 0
@@ -414,14 +418,14 @@ class _QueueFooter extends StatelessWidget {
                         ),
                       ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: controller.busy || controller.doneCount == 0
                       ? null
                       : () => _save(context),
                   icon: const Icon(Icons.download_outlined, size: 18),
-                  label: const Text('Save all'),
+                  label: Text(AppLocalizations.of(context).saveAll),
                 ),
               ),
             ],
