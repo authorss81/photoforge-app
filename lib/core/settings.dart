@@ -226,6 +226,10 @@ class ResizeSettings extends ChangeNotifier {
   int _webpMethod = 4;
   ChromaMode _chroma = ChromaMode.yuv444;
   bool _stripMetadata = true;
+  bool _stripGps = true;
+  bool _stripCamera = true;
+  bool _stripTimestamps = true;
+  bool _stripThumbnail = true;
   bool _autoRotate = true;
   bool _progressive = true;
   bool _preserveAnimation = true;
@@ -281,6 +285,10 @@ class ResizeSettings extends ChangeNotifier {
   int get webpMethod => _webpMethod;
   ChromaMode get chroma => _chroma;
   bool get stripMetadata => _stripMetadata;
+  bool get stripGps => _stripMetadata && _stripGps;
+  bool get stripCamera => _stripMetadata && _stripCamera;
+  bool get stripTimestamps => _stripMetadata && _stripTimestamps;
+  bool get stripThumbnail => _stripMetadata && _stripThumbnail;
   bool get autoRotate => _autoRotate;
   bool get progressive => _progressive;
   bool get preserveAnimation => _preserveAnimation;
@@ -429,6 +437,30 @@ class ResizeSettings extends ChangeNotifier {
   void setStripMetadata(bool v) {
     if (v == _stripMetadata) return;
     _stripMetadata = v;
+    notifyListeners();
+  }
+
+  void setStripGps(bool v) {
+    if (v == _stripGps) return;
+    _stripGps = v;
+    notifyListeners();
+  }
+
+  void setStripCamera(bool v) {
+    if (v == _stripCamera) return;
+    _stripCamera = v;
+    notifyListeners();
+  }
+
+  void setStripTimestamps(bool v) {
+    if (v == _stripTimestamps) return;
+    _stripTimestamps = v;
+    notifyListeners();
+  }
+
+  void setStripThumbnail(bool v) {
+    if (v == _stripThumbnail) return;
+    _stripThumbnail = v;
     notifyListeners();
   }
 
@@ -594,6 +626,10 @@ class ResizeSettings extends ChangeNotifier {
     'webm': _webpMethod,
     'chroma': _chroma.name,
     'strip': _stripMetadata,
+        'stripGps': _stripGps,
+        'stripCam': _stripCamera,
+        'stripTs': _stripTimestamps,
+        'stripThumb': _stripThumbnail,
     'autorot': _autoRotate,
     'prog': _progressive,
     'anim': _preserveAnimation,
@@ -641,6 +677,10 @@ class ResizeSettings extends ChangeNotifier {
       orElse: () => _chroma,
     );
     _stripMetadata = (j['strip'] as bool?) ?? _stripMetadata;
+    _stripGps = (j['stripGps'] as bool?) ?? _stripGps;
+    _stripCamera = (j['stripCam'] as bool?) ?? _stripCamera;
+    _stripTimestamps = (j['stripTs'] as bool?) ?? _stripTimestamps;
+    _stripThumbnail = (j['stripThumb'] as bool?) ?? _stripThumbnail;
     _autoRotate = (j['autorot'] as bool?) ?? _autoRotate;
     _progressive = (j['prog'] as bool?) ?? _progressive;
     _preserveAnimation = (j['anim'] as bool?) ?? _preserveAnimation;
@@ -680,7 +720,11 @@ class ResizeSettings extends ChangeNotifier {
     _webpLossless = false;
     _webpMethod = 4;
     _chroma = ChromaMode.yuv444;
-    _stripMetadata = true;
+_stripMetadata = true;
+    _stripGps = true;
+    _stripCamera = true;
+    _stripTimestamps = true;
+    _stripThumbnail = true;
     _autoRotate = true;
     _progressive = true;
     _preserveAnimation = true;

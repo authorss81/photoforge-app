@@ -210,7 +210,7 @@ class ResizeEngine {
 
     if (s.stripMetadata) {
       for (final f in produced) {
-        f.exif = img.ExifData();
+        _applyMetadataPolicy(f, s);
       }
     }
 
@@ -430,6 +430,48 @@ class ResizeEngine {
       if (mapped != OutputFormat.keep) return mapped;
     }
     return OutputFormat.jpeg;
+  }
+
+  /// Removes exactly the metadata the settings ask for, nothing more.
+  ///
+  /// Each flag maps onto the IFD that carries it: GPS lives in the `gps` sub
+  /// directory of IFD0, camera data in the `exif` sub directory, timestamps in
+  /// three well-known tags, and the thumbnail in IFD1. When every flag is set
+  /// the whole container is replaced, which is also faster than pruning.
+  static void _applyMetadataPolicy(img.Image work, ResizeSettings s) {
+    if (!s.stripGps &&
+        !s.stripCamera &&
+        !s.stripTimestamps &&
+        !s.stripThumbnail) {
+      return;
+    }
+    if (s.stripGps && s.stripCamera && s.stripTimestamps && s.stripThumbnail) {
+      work.exif = img.ExifData();
+      return;
+    }
+    final exif = work.exif;
+    // operator[] auto-creates directories on read, so check first to avoid
+    // manufacturing empty IFD structure on images that carry no metadata.
+    final hasIfd0 = exif.directories.containsKey('ifd0');
+    if (s.stripGps && hasIfd0) {
+      exif.imageIfd.sub.directories.remove('gps');
+    }
+    if (s.stripCamera && hasIfd0) {
+      exif.imageIfd.sub.directories.remove('exif');
+    }
+    if (s.stripTimestamps && hasIfd0) {
+      // 0x0132 ModifyDate in IFD0; 0x9003 DateTimeOriginal and 0x9004 CreateDate
+      // in the EXIF sub IFD.
+      exif.imageIfd.data.remove(0x0132);
+      final subExif = exif.imageIfd.sub.directories['exif'];
+      if (subExif != null) {
+        subExif.data.remove(0x9003);
+        subExif.data.remove(0x9004);
+      }
+    }
+    if (s.stripThumbnail) {
+      exif.directories.remove('ifd1');
+    }
   }
 
   static img.Image _applyAdjustments(img.Image src, ResizeSettings s) {

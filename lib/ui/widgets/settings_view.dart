@@ -358,6 +358,24 @@ class SettingsView extends StatelessWidget {
     );
   }
 
+  Widget _metadataToggle(
+    BuildContext context, {
+    required bool value,
+    required ValueChanged<bool> onChanged,
+    required String label,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 12),
+      child: SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        dense: true,
+        value: value,
+        onChanged: onChanged,
+        title: Text(label, style: const TextStyle(fontSize: 12.5)),
+      ),
+    );
+  }
+
   Widget _metadata(BuildContext context, ResizeSettings s) {
     return Column(
       children: [
@@ -371,13 +389,41 @@ class SettingsView extends StatelessWidget {
             style: TextStyle(fontSize: 13.5),
           ),
           subtitle: Text(
-            'Removes GPS, camera and timestamp data',
+            s.stripMetadata
+                ? 'Choose what goes below'
+                : 'Everything is kept as-is',
             style: TextStyle(
               fontSize: 11,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
         ),
+        if (s.stripMetadata) ...[
+          _metadataToggle(
+            context,
+            value: s.stripGps,
+            onChanged: s.setStripGps,
+            label: 'Location (GPS)',
+          ),
+          _metadataToggle(
+            context,
+            value: s.stripCamera,
+            onChanged: s.setStripCamera,
+            label: 'Camera make, model and settings',
+          ),
+          _metadataToggle(
+            context,
+            value: s.stripTimestamps,
+            onChanged: s.setStripTimestamps,
+            label: 'Dates and times taken',
+          ),
+          _metadataToggle(
+            context,
+            value: s.stripThumbnail,
+            onChanged: s.setStripThumbnail,
+            label: 'Embedded thumbnail',
+          ),
+        ],
         if (s.format == OutputFormat.keep)
           SwitchListTile(
             contentPadding: EdgeInsets.zero,

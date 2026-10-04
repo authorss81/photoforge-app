@@ -330,15 +330,72 @@ void main() {
       expect(b.bytes.length, lessThan(a.bytes.length));
     });
 
-    test('strips metadata when asked', () async {
-      final keep = ResizeSettings()..setStripMetadata(false);
-      final drop = ResizeSettings()..setStripMetadata(true);
+    test('strips GPS but keeps the camera tag', () async {
+      Uint8List tagged() {
+        final exif = img.ExifData();
+        exif.imageIfd.data[0x010F] = img.IfdValueAscii('TestMake');
+        exif.imageIfd.data[0x0132] = img.IfdValueAscii('2020:01:02 03:04:05');
+        exif.imageIfd.sub.directories['gps'] = img.IfdDirectory()
+          ..setGpsLocation(latitude: 1.5, longitude: 2.5);
+        return img.injectJpgExif(_makeJpeg(400, 300), exif)!;
+      }
 
-      final src = _makeJpeg(200, 200);
-      final a = await ResizeEngine.run(src, keep, name: 'g.jpg');
-      final b = await ResizeEngine.run(src, drop, name: 'g.jpg');
+      // Sanity: the tags survive a round trip with stripping off.
+      final plain = ResizeSettings()
+        ..setMode(ResizeMode.original)
+        ..setFormat(OutputFormat.jpeg)
+        ..setStripMetadata(false);
+      final kept = img.decodeJpgExif(
+        (await ResizeEngine.run(tagged(), plain, name: 'ex.jpg')).bytes,
+      )!;
+      expect(kept.imageIfd.sub.directories.containsKey('gps'), isTrue);
+      expect(kept.imageIfd.data[0x010F]?.toString(), contains('TestMake'));
 
-      expect(b.bytes.length, lessThanOrEqualTo(a.bytes.length));
+      // Strip GPS only.
+      final gpsOnly = ResizeSettings()
+        ..setMode(ResizeMode.original)
+        ..setFormat(OutputFormat.jpeg)
+        ..setStripMetadata(true)
+        ..setStripGps(true)
+        ..setStripCamera(false)
+        ..setStripTimestamps(false)
+        ..setStripThumbnail(false);
+      final out = img.decodeJpgExif(
+        (await ResizeEngine.run(tagged(), gpsOnly, name: 'ex.jpg')).bytes,
+      )!;
+      expect(out.imageIfd.sub.directories.containsKey('gps'), isFalse);
+      expect(out.imageIfd.data[0x010F]?.toString(), contains('TestMake'));
+      expect(out.imageIfd.data.containsKey(0x0132), isTrue);
+
+      // Strip timestamps only.
+      final tsOnly = ResizeSettings()
+        ..setMode(ResizeMode.original)
+        ..setFormat(OutputFormat.jpeg)
+        ..setStripMetadata(true)
+        ..setStripGps(false)
+        ..setStripCamera(false)
+        ..setStripTimestamps(true)
+        ..setStripThumbnail(false);
+      final outTs = img.decodeJpgExif(
+        (await ResizeEngine.run(tagged(), tsOnly, name: 'ex.jpg')).bytes,
+      )!;
+      expect(outTs.imageIfd.sub.directories.containsKey('gps'), isTrue);
+      expect(outTs.imageIfd.data.containsKey(0x0132), isFalse);
+
+      // Master off keeps everything even when the individual flags are armed.
+      final masterOff = ResizeSettings()
+        ..setMode(ResizeMode.original)
+        ..setFormat(OutputFormat.jpeg)
+        ..setStripMetadata(false)
+        ..setStripGps(true)
+        ..setStripCamera(true)
+        ..setStripTimestamps(true)
+        ..setStripThumbnail(true);
+      final outKept = img.decodeJpgExif(
+        (await ResizeEngine.run(tagged(), masterOff, name: 'ex.jpg')).bytes,
+      )!;
+      expect(outKept.imageIfd.sub.directories.containsKey('gps'), isTrue);
+      expect(outKept.imageIfd.data[0x010F]?.toString(), contains('TestMake'));
     });
 
     test('rotating by 90 degrees swaps the axes', () async {
