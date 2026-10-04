@@ -1,12 +1,13 @@
 import 'dart:io';
-import 'dart:typed_data';
 
-import 'package:flutter/material.dart' show Color;
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:pixelforge/core/controller.dart';
 import 'package:pixelforge/core/engine.dart';
 import 'package:pixelforge/core/job.dart';
+import 'package:pixelforge/core/native_decoder.dart';
 import 'package:pixelforge/core/tiff16.dart';
 import 'package:pixelforge/core/resize_mode.dart';
 import 'package:pixelforge/core/settings.dart';
@@ -101,6 +102,8 @@ ResizeSettings _webpSettings({int width = 60}) => ResizeSettings()
   ..setFormat(OutputFormat.webp);
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('geometry', () {
     test('longestSide fits inside the box without growing', () {
       final t = computeTargetSize(
@@ -496,7 +499,7 @@ void main() {
   });
 
   group('formats', () {
-    double _meanAbs(img.Image a, img.Image b) {
+    double meanAbs(img.Image a, img.Image b) {
       var sum = 0;
       var n = 0;
       for (var y = 0; y < a.height && y < b.height; y++) {
@@ -545,8 +548,8 @@ void main() {
         interpolation: img.Interpolation.nearest,
       );
       expect(
-        _meanAbs(out, ref),
-        lessThan(_meanAbs(baseline, ref)),
+        meanAbs(out, ref),
+        lessThan(meanAbs(baseline, ref)),
         reason: 'direct-colour resize must beat nearest-neighbour against the reference',
       );
     });
@@ -866,6 +869,82 @@ void main() {
         pool.dispose();
       }
     }, timeout: const Timeout(Duration(minutes: 2)));
+  });
+
+  group('native', () {
+    test('recognises the HEIF family by extension', () {
+      expect(NativeDecoder.isHeifFamily('heic'), isTrue);
+      expect(NativeDecoder.isHeifFamily('HEIF'), isTrue);
+      expect(NativeDecoder.isHeifFamily('avif'), isTrue);
+      expect(NativeDecoder.isHeifFamily('jpg'), isFalse);
+      expect(NativeDecoder.isHeifFamily(null), isFalse);
+    });
+
+    test('does not touch the channel off Android', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      try {
+        var called = false;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(NativeDecoder.channel, (call) async {
+          called = true;
+          return null;
+        });
+        final out = await NativeDecoder.decodeToPng(Uint8List.fromList([1, 2, 3]));
+        expect(out, isNull);
+        expect(called, isFalse);
+      } finally {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(NativeDecoder.channel, null);
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
+    test('decodes through a mocked platform channel', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      final png = img.encodePng(
+        img.Image(width: 40, height: 30, numChannels: 3),
+      );
+      try {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(NativeDecoder.channel, (call) async {
+          expect(call.method, 'decodeImage');
+          return png;
+        });
+        final decoded = await ResizeEngine.decodeAsync(
+          Uint8List.fromList([9, 9, 9]),
+          'photo.heic',
+        );
+        expect(decoded.width, 40);
+        expect(decoded.height, 30);
+      } finally {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(NativeDecoder.channel, null);
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
+    test('a failing channel falls back to the clear error', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      try {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(NativeDecoder.channel, (call) async {
+          throw PlatformException(code: 'DECODE', message: 'nope');
+        });
+        final s = ResizeSettings()..setFormat(OutputFormat.jpeg);
+        expect(
+          () => ResizeEngine.run(Uint8List.fromList([9, 9, 9]), s, name: 'photo.heic'),
+          throwsA(isA<EngineError>().having(
+            (e) => e.message,
+            'message',
+            contains('HEIC'),
+          )),
+        );
+      } finally {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(NativeDecoder.channel, null);
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
   });
 
   group('cancellation', () {

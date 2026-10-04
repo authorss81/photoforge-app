@@ -6,6 +6,7 @@ import 'package:image/image.dart' as img;
 
 import 'job.dart';
 import 'error.dart';
+import 'native_decoder.dart';
 import 'resize_mode.dart';
 import 'settings.dart';
 import 'tiff16.dart';
@@ -211,6 +212,27 @@ class ResizeEngine {
 
   /// Decoders throw on malformed data rather than returning null, so every entry
   /// point funnels through here to give the UI one predictable error type.
+  /// Async decode that tries the platform decoder first for the HEIF family.
+  ///
+  /// Method channels do not exist in worker isolates, so pooled callers must
+  /// not rely on this; the controller partitions HEIF work onto the main
+  /// isolate instead.
+  static Future<img.Image> decodeAsync(Uint8List bytes, String? name) async {
+    final ext = name == null ? null : extensionOfName(name);
+    if (NativeDecoder.isHeifFamily(ext)) {
+      final png = await NativeDecoder.decodeToPng(bytes);
+      if (png != null) {
+        try {
+          final decoded = img.decodePng(png);
+          if (decoded != null && decoded.isValid) return decoded;
+        } catch (_) {
+          // Fall through to the standard path and its clear error.
+        }
+      }
+    }
+    return _decodeOrThrow(bytes, name);
+  }
+
   static img.Image _decodeOrThrow(Uint8List bytes, String? name) {
     if (isCmykJpeg(bytes)) {
       throw EngineError(
@@ -265,7 +287,7 @@ class ResizeEngine {
 
     tick(0.02);
 
-    final decoded = _decodeOrThrow(source, name);
+    final decoded = await decodeAsync(source, name);
     lastWorkingChannels = 0;
     cancellation?.throwIfCancelled();
 
@@ -346,7 +368,7 @@ class ResizeEngine {
     CancellationToken? cancellation,
   }) async {
     if (presets.isEmpty) return const [];
-    final decoded = _decodeOrThrow(source, name);
+    final decoded = await decodeAsync(source, name);
     final out = <List<EngineResult>>[];
     for (var i = 0; i < presets.length; i++) {
       final s = presets[i];

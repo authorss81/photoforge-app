@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import 'engine.dart';
 import 'job.dart';
+import 'native_decoder.dart';
 import 'picker.dart';
 import 'saver/saver.dart';
 import 'settings.dart';
@@ -270,12 +271,25 @@ class ResizeController extends ChangeNotifier {
           _changed();
           break;
         }
-        if (WorkerPool.isSupported) {
-          _pool ??= await WorkerPool.create();
-          await _runPooled(chunk, runSettings, _cancelToken);
-        } else {
-          for (var i = 0; i < chunk.length; i++) {
-            await _runOne(chunk[i], runSettings, _cancelToken);
+        // HEIF-family files need the platform decoder, and method channels do
+        // not exist in worker isolates. They run on the main isolate, which
+        // also keeps their progress reporting exact rather than interpolated.
+        final native = chunk
+            .where((j) => NativeDecoder.isHeifFamily(
+                ResizeEngine.extensionOfName(j.name)))
+            .toList();
+        final regular = chunk.where((j) => !native.contains(j)).toList();
+        for (var i = 0; i < native.length; i++) {
+          await _runOne(native[i], runSettings, _cancelToken);
+        }
+        if (regular.isNotEmpty) {
+          if (WorkerPool.isSupported) {
+            _pool ??= await WorkerPool.create();
+            await _runPooled(regular, runSettings, _cancelToken);
+          } else {
+            for (var i = 0; i < regular.length; i++) {
+              await _runOne(regular[i], runSettings, _cancelToken);
+            }
           }
         }
         index++;
