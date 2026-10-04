@@ -53,7 +53,6 @@ import UniformTypeIdentifiers
       }
       result(FlutterStandardTypedData(bytes: png))
     }
-  }
 
     let picker = FlutterMethodChannel(
       name: "dev.pixelforge/system_picker",

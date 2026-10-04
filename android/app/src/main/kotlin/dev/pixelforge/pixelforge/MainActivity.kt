@@ -134,21 +134,6 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
-            if (call.method == "decodeImage") {
-                val bytes = call.argument<ByteArray>("bytes")
-                if (bytes == null) {
-                    result.error("ARG", "missing image bytes", null)
-                    return@setMethodCallHandler
-                }
-                try {
-                    result.success(decodeToPng(bytes))
-                } catch (e: Exception) {
-                    result.error("DECODE", e.message, null)
-                }
-            } else {
-                result.notImplemented()
-            }
-        }
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "dev.pixelforge/system_picker",

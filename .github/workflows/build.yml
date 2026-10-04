@@ -40,6 +40,14 @@ jobs:
       - name: Test
         run: flutter test
 
+      - name: Native syntax
+        # A duplicated Kotlin handler and a stray Swift brace both reached main
+        # and only surfaced in the android and ios jobs, minutes and macOS
+        # minutes later. This catches that class of error in seconds. It is a
+        # balance check, not a compile, so it is not a substitute for the
+        # android and ios jobs.
+        run: python scripts/check_native_syntax.py
+
   golden:
     name: golden
     needs: verify
