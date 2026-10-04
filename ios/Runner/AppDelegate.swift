@@ -1,8 +1,12 @@
 import Flutter
+import PhotosUI
 import UIKit
+import UniformTypeIdentifiers
 
 @main
-@objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+@objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate,
+  PHPickerViewControllerDelegate {
+  private var pickerResult: FlutterResult?
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -12,11 +16,11 @@ import UIKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
-    let channel = FlutterMethodChannel(
+    let decoder = FlutterMethodChannel(
       name: "dev.pixelforge/native_decoder",
       binaryMessenger: engineBridge.binaryMessenger
     )
-    channel.setMethodCallHandler { [weak self] call, result in
+    decoder.setMethodCallHandler { [weak self] call, result in
       guard call.method == "decodeImage" else {
         result(FlutterMethodNotImplemented)
         return
@@ -38,6 +42,52 @@ import UIKit
       }
       result(FlutterStandardTypedData(bytes: png))
     }
+  }
+
+    let picker = FlutterMethodChannel(
+      name: "dev.pixelforge/system_picker",
+      binaryMessenger: engineBridge.binaryMessenger
+    )
+    picker.setMethodCallHandler { [weak self] call, result in
+      guard call.method == "pickImages" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      self?.presentPicker(result: result)
+    }
+  }
+
+  /// System photo picker. Returns only what the user selected and needs no
+  /// photo-library permission, which is the entire point.
+  private func presentPicker(result: @escaping FlutterResult) {
+    guard pickerResult == nil else {
+      result(
+        FlutterError(code: "BUSY", message: "a pick is already in progress",
+          details: nil))
+      return
+    }
+    var config = PHPickerConfiguration(photoLibrary: .shared())
+    config.selectionLimit = 20
+    config.filter = .images
+    let picker = PHPickerViewController(configuration: config)
+    picker.delegate = self
+    pickerResult = result
+    guard let root = keyRootViewController() else {
+      pickerResult = nil
+      result(
+        FlutterError(code: "PICK", message: "no view controller to present from",
+          details: nil))
+      return
+    }
+    root.present(picker, animated: true)
+  }
+
+  private func keyRootViewController() -> UIViewController? {
+    UIApplication.shared.connectedScenes
+      .compactMap { $0 as? UIWindowScene }
+      .flatMap { $0.windows }
+      .first(where: { $0.isKeyWindow })?
+      .rootViewController
   }
 
   /// Full-resolution PNG via ImageIO, with the EXIF orientation baked in by
@@ -76,6 +126,55 @@ import UIKit
     case 7: return .rightMirrored
     case 8: return .left
     default: return .up
+    }
+  }
+
+  // MARK: - PHPickerViewControllerDelegate
+
+  func picker(
+    _ picker: PHPickerViewController,
+    didFinishPicking results: [PHPickerResult]
+  ) {
+    picker.dismiss(animated: true)
+    guard let result = pickerResult else { return }
+    pickerResult = nil
+    guard !results.isEmpty else {
+      result([])
+      return
+    }
+    // Load every selection, then reply exactly once.
+    let group = DispatchGroup()
+    var items: [[String: Any]] = []
+    let lock = NSLock()
+    for r in results {
+      group.enter()
+      let name =
+        r.itemProvider.suggestedName ?? "image"
+      if r.itemProvider.hasItemConformingToTypeIdentifier(
+        UTType.image.identifier)
+      {
+        r.itemProvider.loadFileRepresentation(
+          forTypeIdentifier: UTType.image.identifier
+        ) { url, _ in
+          defer { group.leave() }
+          guard let url = url,
+            let data = try? Data(contentsOf: url)
+          else {
+            return
+          }
+          lock.lock()
+          items.append([
+            "name": name,
+            "bytes": FlutterStandardTypedData(bytes: data),
+          ])
+          lock.unlock()
+        }
+      } else {
+        group.leave()
+      }
+    }
+    group.notify(queue: .main) {
+      result(items)
     }
   }
 }

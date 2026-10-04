@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 
 import 'engine.dart';
 import 'job.dart';
+import 'system_picker.dart';
 
 /// Reads user-selected images into memory. One API for Android, iOS, Windows,
 /// macOS, Linux and web.
@@ -14,6 +15,20 @@ class SourcePicker {
 
   static Future<List<({String name, Uint8List bytes, String? path})>>
   pickFiles() async {
+    // Prefer the system photo picker on mobile: no permission, only the
+    // selected photos. Anything it cannot do falls back below.
+    try {
+      final picked = await SystemPicker.pickImages();
+      if (picked != null) {
+        return picked
+            .where((f) =>
+                f.bytes.isNotEmpty &&
+                f.bytes.lengthInBytes <= maxFileBytes)
+            .toList();
+      }
+    } catch (_) {
+      // Fall through to the file picker.
+    }
     final result = await FilePicker.pickFiles(
       dialogTitle: 'Select images',
       type: FileType.custom,

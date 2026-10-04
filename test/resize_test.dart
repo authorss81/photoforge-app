@@ -8,6 +8,7 @@ import 'package:pixelforge/core/controller.dart';
 import 'package:pixelforge/core/engine.dart';
 import 'package:pixelforge/core/job.dart';
 import 'package:pixelforge/core/native_decoder.dart';
+import 'package:pixelforge/core/system_picker.dart';
 import 'package:pixelforge/core/native/libheif.dart';
 import 'package:pixelforge/core/tiff16.dart';
 import 'package:pixelforge/core/resize_mode.dart';
@@ -879,6 +880,63 @@ void main() {
       expect(NativeDecoder.isHeifFamily('avif'), isTrue);
       expect(NativeDecoder.isHeifFamily('jpg'), isFalse);
       expect(NativeDecoder.isHeifFamily(null), isFalse);
+    });
+
+    test('system picker returns photos without a permission', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      final png = img.encodePng(
+        img.Image(width: 30, height: 20, numChannels: 3),
+      );
+      try {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(SystemPicker.channel, (call) async {
+          expect(call.method, 'pickImages');
+          return [
+            {'name': 'a.heic', 'bytes': png},
+            {'name': 'empty.jpg', 'bytes': Uint8List(0)},
+          ];
+        });
+        final out = await SystemPicker.pickImages();
+        expect(out, hasLength(1));
+        expect(out!.first.name, 'a.heic');
+      } finally {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(SystemPicker.channel, null);
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
+    test('system picker failure means fallback, not a crash', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      try {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(SystemPicker.channel, (call) async {
+          throw PlatformException(code: 'UNSUPPORTED');
+        });
+        expect(await SystemPicker.pickImages(), isNull);
+      } finally {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(SystemPicker.channel, null);
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
+    test('system picker stays off desktop', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      try {
+        var called = false;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(SystemPicker.channel, (call) async {
+          called = true;
+          return null;
+        });
+        expect(await SystemPicker.pickImages(), isNull);
+        expect(called, isFalse);
+      } finally {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(SystemPicker.channel, null);
+        debugDefaultTargetPlatformOverride = null;
+      }
     });
 
     test('libheif decodes a real HEIC when the library is present', () async {
