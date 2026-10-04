@@ -25,7 +25,14 @@ Uint8List _noisySource(int w, int h) {
       final r = ((x * 255 ~/ w) + (seed >> 16 & 63)) ~/ 2;
       final g = ((y * 255 ~/ h) + (seed >> 8 & 63)) ~/ 2;
       final b = 128 + (seed & 63) - 32;
-      im.setPixelRgba(x, y, r.clamp(0, 255), g.clamp(0, 255), b.clamp(0, 255), 255);
+      im.setPixelRgba(
+        x,
+        y,
+        r.clamp(0, 255),
+        g.clamp(0, 255),
+        b.clamp(0, 255),
+        255,
+      );
     }
   }
   return img.encodeJpg(im, quality: 95);
@@ -43,66 +50,85 @@ String _cell(double medianMs, double spreadMs, int bytes) {
 }
 
 void main() {
-  test('matrix: sizes x modes x formats', () async {
-    final sizes = <String, List<int>>{
-      '1 MP': [1280, 800],
-      '4 MP': [2560, 1600],
-      '16 MP': [5120, 3200],
-    };
-    final modes = <String, ResizeSpec Function()>{
-      'fit-1080': () => const ResizeSpec(mode: ResizeMode.longestSide, width: 1080, height: 1080),
-      'crop-1080': () => const ResizeSpec(mode: ResizeMode.exactCrop, width: 1080, height: 1080),
-    };
-    final formats = <String, OutputFormat>{
-      'jpeg-q85': OutputFormat.jpeg,
-      'webp-q80': OutputFormat.webp,
-    };
+  test(
+    'matrix: sizes x modes x formats',
+    () async {
+      final sizes = <String, List<int>>{
+        '1 MP': [1280, 800],
+        '4 MP': [2560, 1600],
+        '16 MP': [5120, 3200],
+      };
+      final modes = <String, ResizeSpec Function()>{
+        'fit-1080': () => const ResizeSpec(
+          mode: ResizeMode.longestSide,
+          width: 1080,
+          height: 1080,
+        ),
+        'crop-1080': () => const ResizeSpec(
+          mode: ResizeMode.exactCrop,
+          width: 1080,
+          height: 1080,
+        ),
+      };
+      final formats = <String, OutputFormat>{
+        'jpeg-q85': OutputFormat.jpeg,
+        'webp-q80': OutputFormat.webp,
+      };
 
-    final sources = <String, Uint8List>{
-      for (final e in sizes.entries) e.key: _noisySource(e.value[0], e.value[1]),
-    };
+      final sources = <String, Uint8List>{
+        for (final e in sizes.entries)
+          e.key: _noisySource(e.value[0], e.value[1]),
+      };
 
-    final table = <String, Map<String, String>>{};
-    for (final sizeEntry in sizes.entries) {
-      final row = <String, String>{};
-      for (final modeEntry in modes.entries) {
-        for (final formatEntry in formats.entries) {
-          final times = <double>[];
-          var bytes = 0;
-          for (var i = 0; i < 5; i++) {
-            final s = ResizeSettings();
-            final spec = modeEntry.value();
-            s.setMode(spec.mode);
-            if (spec.width != null) s.setWidth(spec.width!);
-            if (spec.height != null) s.setHeight(spec.height!);
-            s.setFormat(formatEntry.value);
-            s.setQuality(formatEntry.value == OutputFormat.jpeg ? 85 : 80);
-            final sw = Stopwatch()..start();
-            final res = await ResizeEngine.run(
-              sources[sizeEntry.key]!,
-              s,
-              name: 'bench.jpg',
+      final table = <String, Map<String, String>>{};
+      for (final sizeEntry in sizes.entries) {
+        final row = <String, String>{};
+        for (final modeEntry in modes.entries) {
+          for (final formatEntry in formats.entries) {
+            final times = <double>[];
+            var bytes = 0;
+            for (var i = 0; i < 5; i++) {
+              final s = ResizeSettings();
+              final spec = modeEntry.value();
+              s.setMode(spec.mode);
+              if (spec.width != null) s.setWidth(spec.width!);
+              if (spec.height != null) s.setHeight(spec.height!);
+              s.setFormat(formatEntry.value);
+              s.setQuality(formatEntry.value == OutputFormat.jpeg ? 85 : 80);
+              final sw = Stopwatch()..start();
+              final res = await ResizeEngine.run(
+                sources[sizeEntry.key]!,
+                s,
+                name: 'bench.jpg',
+              );
+              sw.stop();
+              times.add(sw.elapsedMicroseconds / 1000.0);
+              bytes = res.bytes.length;
+            }
+            final med = _median(times);
+            final spread = times.map((t) => (t - med).abs()).reduce(math.max);
+            row['${modeEntry.key} ${formatEntry.key}'] = _cell(
+              med,
+              spread,
+              bytes,
             );
-            sw.stop();
-            times.add(sw.elapsedMicroseconds / 1000.0);
-            bytes = res.bytes.length;
           }
-          final med = _median(times);
-          final spread = times.map((t) => (t - med).abs()).reduce(math.max);
-          row['${modeEntry.key} ${formatEntry.key}'] = _cell(med, spread, bytes);
         }
+        table[sizeEntry.key] = row;
       }
-      table[sizeEntry.key] = row;
-    }
 
-    final cols = table.values.first.keys.toList();
-    final buf = StringBuffer()
-      ..writeln('| source | ${cols.join(' | ')} |')
-      ..writeln('| --- | ${List.filled(cols.length, '---').join(' | ')} |');
-    for (final e in table.entries) {
-      buf.writeln('| ${e.key} | ${cols.map((c) => e.value[c]).join(' | ')} |');
-    }
-    // ignore: avoid_print
-    print('\nBENCHMARK TABLE\n$buf');
-  }, timeout: const Timeout(Duration(minutes: 30)));
+      final cols = table.values.first.keys.toList();
+      final buf = StringBuffer()
+        ..writeln('| source | ${cols.join(' | ')} |')
+        ..writeln('| --- | ${List.filled(cols.length, '---').join(' | ')} |');
+      for (final e in table.entries) {
+        buf.writeln(
+          '| ${e.key} | ${cols.map((c) => e.value[c]).join(' | ')} |',
+        );
+      }
+      // ignore: avoid_print
+      print('\nBENCHMARK TABLE\n$buf');
+    },
+    timeout: const Timeout(Duration(minutes: 30)),
+  );
 }

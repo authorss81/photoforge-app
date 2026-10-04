@@ -15,8 +15,9 @@ import 'package:flutter/services.dart';
 class SharedContent {
   const SharedContent._();
 
-  static const MethodChannel channel =
-      MethodChannel('dev.pixelforge/shared_content');
+  static const MethodChannel channel = MethodChannel(
+    'dev.pixelforge/shared_content',
+  );
 
   static bool get isMobile =>
       !kIsWeb &&
@@ -26,7 +27,7 @@ class SharedContent {
   /// Drains whatever was shared into the app since the last call. Empty when
   /// nothing is waiting, null when the platform cannot provide any.
   static Future<List<({String name, Uint8List bytes, String? path})>?>
-      collect() async {
+  collect() async {
     if (!isMobile) return null;
     try {
       final raw = await channel.invokeMethod<List<dynamic>>('getSharedImages');

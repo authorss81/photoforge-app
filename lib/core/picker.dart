@@ -21,9 +21,10 @@ class SourcePicker {
       final picked = await SystemPicker.pickImages();
       if (picked != null) {
         return picked
-            .where((f) =>
-                f.bytes.isNotEmpty &&
-                f.bytes.lengthInBytes <= maxFileBytes)
+            .where(
+              (f) =>
+                  f.bytes.isNotEmpty && f.bytes.lengthInBytes <= maxFileBytes,
+            )
             .toList();
       }
     } catch (_) {

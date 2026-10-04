@@ -35,51 +35,60 @@ typedef _CtxAllocD = Pointer<Void> Function();
 typedef _CtxFreeC = Void Function(Pointer<Void>);
 typedef _CtxFreeD = void Function(Pointer<Void>);
 
-typedef _ReadMemC = _HeifError Function(
-    Pointer<Void>, Pointer<Uint8>, Size, Pointer<Void>);
-typedef _ReadMemD = _HeifError Function(
-    Pointer<Void>, Pointer<Uint8>, int, Pointer<Void>);
+typedef _ReadMemC =
+    _HeifError Function(Pointer<Void>, Pointer<Uint8>, Size, Pointer<Void>);
+typedef _ReadMemD =
+    _HeifError Function(Pointer<Void>, Pointer<Uint8>, int, Pointer<Void>);
 
 typedef _PrimaryC = _HeifError Function(Pointer<Void>, Pointer<Pointer<Void>>);
-typedef _PrimaryD = _HeifError Function(
-    Pointer<Void>, Pointer<Pointer<Void>>);
+typedef _PrimaryD = _HeifError Function(Pointer<Void>, Pointer<Pointer<Void>>);
 
-typedef _DecodeC = _HeifError Function(
-    Pointer<Void>, Pointer<Pointer<Void>>, Int32, Int32, Pointer<Void>);
-typedef _DecodeD = _HeifError Function(
-    Pointer<Void>, Pointer<Pointer<Void>>, int, int, Pointer<Void>);
+typedef _DecodeC =
+    _HeifError Function(
+      Pointer<Void>,
+      Pointer<Pointer<Void>>,
+      Int32,
+      Int32,
+      Pointer<Void>,
+    );
+typedef _DecodeD =
+    _HeifError Function(
+      Pointer<Void>,
+      Pointer<Pointer<Void>>,
+      int,
+      int,
+      Pointer<Void>,
+    );
 
 typedef _DimC = Int32 Function(Pointer<Void>, Int32);
 typedef _DimD = int Function(Pointer<Void>, int);
 
-typedef _PlaneC = Pointer<Uint8> Function(
-    Pointer<Void>, Int32, Pointer<Int32>);
-typedef _PlaneD = Pointer<Uint8> Function(
-    Pointer<Void>, int, Pointer<Int32>);
+typedef _PlaneC = Pointer<Uint8> Function(Pointer<Void>, Int32, Pointer<Int32>);
+typedef _PlaneD = Pointer<Uint8> Function(Pointer<Void>, int, Pointer<Int32>);
 
 typedef _ReleaseC = Void Function(Pointer<Void>);
 typedef _ReleaseD = void Function(Pointer<Void>);
 
 class Libheif {
   Libheif._(DynamicLibrary lib)
-      : _alloc = lib.lookupFunction<_CtxAllocC, _CtxAllocD>(
-            'heif_context_alloc'),
-        _free = lib.lookupFunction<_CtxFreeC, _CtxFreeD>(
-            'heif_context_free'),
-        _readMem = lib.lookupFunction<_ReadMemC, _ReadMemD>(
-            'heif_context_read_from_memory'),
-        _primary = lib.lookupFunction<_PrimaryC, _PrimaryD>(
-            'heif_context_get_primary_image_handle'),
-        _decode = lib.lookupFunction<_DecodeC, _DecodeD>(
-            'heif_decode_image'),
-        _width = lib.lookupFunction<_DimC, _DimD>('heif_image_get_width'),
-        _height = lib.lookupFunction<_DimC, _DimD>('heif_image_get_height'),
-        _plane = lib.lookupFunction<_PlaneC, _PlaneD>(
-            'heif_image_get_plane'),
-        _imageRelease = lib.lookupFunction<_ReleaseC, _ReleaseD>(
-            'heif_image_release'),
-        _handleRelease = lib.lookupFunction<_ReleaseC, _ReleaseD>(
-            'heif_image_handle_release');
+    : _alloc = lib.lookupFunction<_CtxAllocC, _CtxAllocD>('heif_context_alloc'),
+      _free = lib.lookupFunction<_CtxFreeC, _CtxFreeD>('heif_context_free'),
+      _readMem = lib.lookupFunction<_ReadMemC, _ReadMemD>(
+        'heif_context_read_from_memory',
+      ),
+      _primary = lib.lookupFunction<_PrimaryC, _PrimaryD>(
+        'heif_context_get_primary_image_handle',
+      ),
+      _decode = lib.lookupFunction<_DecodeC, _DecodeD>('heif_decode_image'),
+      _width = lib.lookupFunction<_DimC, _DimD>('heif_image_get_width'),
+      _height = lib.lookupFunction<_DimC, _DimD>('heif_image_get_height'),
+      _plane = lib.lookupFunction<_PlaneC, _PlaneD>('heif_image_get_plane'),
+      _imageRelease = lib.lookupFunction<_ReleaseC, _ReleaseD>(
+        'heif_image_release',
+      ),
+      _handleRelease = lib.lookupFunction<_ReleaseC, _ReleaseD>(
+        'heif_image_handle_release',
+      );
 
   final _CtxAllocD _alloc;
   final _CtxFreeD _free;
@@ -131,9 +140,7 @@ class Libheif {
     yield* _globLibheif(exeDir);
     // Source tree, so `flutter test` exercises the real decoder without an
     // install step. Never used in a shipped build.
-    yield* _globLibheif(
-      '${Directory.current.path}${sep}windows${sep}libheif',
-    );
+    yield* _globLibheif('${Directory.current.path}${sep}windows${sep}libheif');
     // System library as a last resort on Linux.
     if (Platform.isLinux) {
       yield 'libheif.so.1';
@@ -156,16 +163,12 @@ class Libheif {
       // Match the file name, not the whole path: the bundle directory itself
       // is called libheif, which would otherwise match every DLL in it and
       // waste an open plus a symbol lookup on each.
-      final names = d
-          .listSync()
-          .whereType<File>()
-          .map((f) => f.path)
-          .where((p) {
-            final base = p.split(Platform.pathSeparator).last.toLowerCase();
-            return base.startsWith('libheif') && base.endsWith(ext);
-          })
-          .toList()
-        ..sort();
+      final names = d.listSync().whereType<File>().map((f) => f.path).where((
+        p,
+      ) {
+        final base = p.split(Platform.pathSeparator).last.toLowerCase();
+        return base.startsWith('libheif') && base.endsWith(ext);
+      }).toList()..sort();
       yield* names;
     } catch (_) {
       // A missing or unreadable directory is normal, not an error.
@@ -267,7 +270,11 @@ class Libheif {
 
   void _check(_HeifError err, String step) {
     if (err.code == 0) return;
-    final detail = err.message == nullptr ? '' : ' ${err.message.toDartString()}';
-    throw EngineError('libheif failed to $step the image (code ${err.code}).$detail');
+    final detail = err.message == nullptr
+        ? ''
+        : ' ${err.message.toDartString()}';
+    throw EngineError(
+      'libheif failed to $step the image (code ${err.code}).$detail',
+    );
   }
 }

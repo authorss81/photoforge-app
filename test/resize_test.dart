@@ -31,7 +31,14 @@ Uint8List _makePngAlpha(int w, int h) {
   final im = img.Image(width: w, height: h, numChannels: 4);
   for (var y = 0; y < h; y++) {
     for (var x = 0; x < w; x++) {
-      im.setPixelRgba(x, y, (x * 255 ~/ w), (y * 255 ~/ h), 128, (x * 255 ~/ w));
+      im.setPixelRgba(
+        x,
+        y,
+        (x * 255 ~/ w),
+        (y * 255 ~/ h),
+        128,
+        (x * 255 ~/ w),
+      );
     }
   }
   return img.encodePng(im);
@@ -272,7 +279,8 @@ void main() {
       expect(
         ResizeEngine.lastSolveFullEncodes,
         lessThanOrEqualTo(2),
-        reason: 'proxy search plus at most one correction, never a full binary search',
+        reason:
+            'proxy search plus at most one correction, never a full binary search',
       );
     });
 
@@ -301,13 +309,22 @@ void main() {
         ..setHeight(500)
         ..setFormat(OutputFormat.jpeg)
         ..setTargetKb(80);
-      final res = await ResizeEngine.run(_makeJpeg(1600, 1000), s2, name: 'cmp.jpg');
+      final res = await ResizeEngine.run(
+        _makeJpeg(1600, 1000),
+        s2,
+        name: 'cmp.jpg',
+      );
       expect(res.metTarget, isTrue);
       expect(res.bytes.length, lessThanOrEqualTo(budget));
 
-      final drift = (res.bytes.length - legacy.bytes.length).abs() / legacy.bytes.length;
-      expect(drift, lessThan(0.05),
-          reason: 'both solvers land just under the same budget, so they must agree closely');
+      final drift =
+          (res.bytes.length - legacy.bytes.length).abs() / legacy.bytes.length;
+      expect(
+        drift,
+        lessThan(0.05),
+        reason:
+            'both solvers land just under the same budget, so they must agree closely',
+      );
     });
 
     test('quality ordering: lower quality means fewer bytes', () async {
@@ -522,7 +539,14 @@ void main() {
       // Smooth diagonal gradient: nearest-neighbour downscaling staircases it.
       final direct = img.Image(width: 200, height: 200, numChannels: 3);
       for (final p in direct) {
-        direct.setPixelRgba(p.x, p.y, (p.x + p.y) ~/ 2, (p.x * 2) % 256, 128, 255);
+        direct.setPixelRgba(
+          p.x,
+          p.y,
+          (p.x + p.y) ~/ 2,
+          (p.x * 2) % 256,
+          128,
+          255,
+        );
       }
       final paletted = img.decodeGif(img.encodeGif(direct, singleFrame: true))!;
       expect(paletted.hasPalette, isTrue);
@@ -553,7 +577,8 @@ void main() {
       expect(
         meanAbs(out, ref),
         lessThan(meanAbs(baseline, ref)),
-        reason: 'direct-colour resize must beat nearest-neighbour against the reference',
+        reason:
+            'direct-colour resize must beat nearest-neighbour against the reference',
       );
     });
 
@@ -577,7 +602,10 @@ void main() {
       expect(ResizeEngine.isCmykJpeg(sofJpeg(4)), isTrue);
       expect(ResizeEngine.isCmykJpeg(sofJpeg(3)), isFalse);
       expect(ResizeEngine.isCmykJpeg(sofJpeg(1)), isFalse);
-      expect(ResizeEngine.isCmykJpeg(Uint8List.fromList([1, 2, 3, 4])), isFalse);
+      expect(
+        ResizeEngine.isCmykJpeg(Uint8List.fromList([1, 2, 3, 4])),
+        isFalse,
+      );
       expect(ResizeEngine.isCmykJpeg(Uint8List(0)), isFalse);
     });
 
@@ -585,16 +613,23 @@ void main() {
       final s = ResizeSettings()..setFormat(OutputFormat.jpeg);
       expect(
         () => ResizeEngine.run(sofJpeg(4), s, name: 'cmyk.jpg'),
-        throwsA(isA<EngineError>().having(
-          (e) => e.message,
-          'message',
-          contains('CMYK'),
-        )),
+        throwsA(
+          isA<EngineError>().having(
+            (e) => e.message,
+            'message',
+            contains('CMYK'),
+          ),
+        ),
       );
     });
 
     test('16-bit TIFF survives the pipeline at 16 bits', () async {
-      final src = img.Image(width: 120, height: 90, format: img.Format.uint16, numChannels: 3);
+      final src = img.Image(
+        width: 120,
+        height: 90,
+        format: img.Format.uint16,
+        numChannels: 3,
+      );
       for (final p in src) {
         src.setPixelRgba(p.x, p.y, p.x * 500, p.y * 600, 40000, 65535);
       }
@@ -609,13 +644,21 @@ void main() {
         ..setFormat(OutputFormat.tiff);
       final res = await ResizeEngine.run(tiff, s, name: 'deep.tiff');
       final out = img.decodeTiff(res.bytes)!;
-      expect(out.format, img.Format.uint16, reason: 'precision must not be silently truncated');
+      expect(
+        out.format,
+        img.Format.uint16,
+        reason: 'precision must not be silently truncated',
+      );
       expect(out.width, 60);
       var peak = 0;
       for (final p in out) {
         if (p.r.toInt() > peak) peak = p.r.toInt();
       }
-      expect(peak, greaterThan(255), reason: 'values above 8-bit range must survive');
+      expect(
+        peak,
+        greaterThan(255),
+        reason: 'values above 8-bit range must survive',
+      );
     });
 
     test('multi-page TIFF splits into one result per page', () async {
@@ -647,7 +690,9 @@ void main() {
         u16(2, 42);
         u32(4, offs[0]);
         for (var p = 0; p < 2; p++) {
-          final ifdAt = offs[p * 3], bpsAt = offs[p * 3 + 1], pxAt = offs[p * 3 + 2];
+          final ifdAt = offs[p * 3],
+              bpsAt = offs[p * 3 + 1],
+              pxAt = offs[p * 3 + 2];
           var e = ifdAt;
           u16(e, 10);
           e += 2;
@@ -737,15 +782,11 @@ void main() {
     test('three presets share exactly one decode', () async {
       final src = _makeJpeg(1200, 800);
       final before = ResizeEngine.decodeCount;
-      final out = await ResizeEngine.runMulti(
-        src,
-        [
-          buildPreset(OutputFormat.jpeg, 400),
-          buildPreset(OutputFormat.png, 300),
-          buildPreset(OutputFormat.webp, 200),
-        ],
-        name: 'm.jpg',
-      );
+      final out = await ResizeEngine.runMulti(src, [
+        buildPreset(OutputFormat.jpeg, 400),
+        buildPreset(OutputFormat.png, 300),
+        buildPreset(OutputFormat.webp, 200),
+      ], name: 'm.jpg');
       expect(ResizeEngine.decodeCount - before, 1);
       expect(out, hasLength(3));
       expect(out[0].first.width, 400);
@@ -758,14 +799,10 @@ void main() {
 
     test('each preset solves its own byte budget', () async {
       final src = _makeJpeg(1600, 1000);
-      final out = await ResizeEngine.runMulti(
-        src,
-        [
-          buildPreset(OutputFormat.jpeg, 800, kb: 40),
-          buildPreset(OutputFormat.jpeg, 400, kb: 12),
-        ],
-        name: 'm.jpg',
-      );
+      final out = await ResizeEngine.runMulti(src, [
+        buildPreset(OutputFormat.jpeg, 800, kb: 40),
+        buildPreset(OutputFormat.jpeg, 400, kb: 12),
+      ], name: 'm.jpg');
       expect(out, hasLength(2));
       expect(out[0].first.bytes.length, lessThanOrEqualTo(40 * 1024));
       expect(out[1].first.bytes.length, lessThanOrEqualTo(12 * 1024));
@@ -778,7 +815,11 @@ void main() {
 
     test('an empty preset list returns nothing without decoding', () async {
       final before = ResizeEngine.decodeCount;
-      final out = await ResizeEngine.runMulti(_makeJpeg(100, 80), [], name: 'm.jpg');
+      final out = await ResizeEngine.runMulti(
+        _makeJpeg(100, 80),
+        [],
+        name: 'm.jpg',
+      );
       expect(out, isEmpty);
       expect(ResizeEngine.decodeCount - before, 0);
     });
@@ -793,85 +834,129 @@ void main() {
       return s;
     }
 
-    test('a worker produces byte-identical output', () async {
-      final pool = await WorkerPool.create(size: 1);
-      try {
-        final src = _makeJpeg(600, 400);
-        final direct = await ResizeEngine.run(src, sizedSettings(), name: 'w.jpg');
-
-        var sawProgress = false;
-        final maps = await pool.run(
-          IsolateMessage(
-            id: pool.nextId(),
-            settingsJson: sizedSettings().toJson(),
-            source: src,
+    test(
+      'a worker produces byte-identical output',
+      () async {
+        final pool = await WorkerPool.create(size: 1);
+        try {
+          final src = _makeJpeg(600, 400);
+          final direct = await ResizeEngine.run(
+            src,
+            sizedSettings(),
             name: 'w.jpg',
-          ),
-          (_) => sawProgress = true,
-        );
-        final viaWorker = EngineResult.fromMap(maps.first);
-
-        expect(viaWorker.bytes, orderedEquals(direct.bytes));
-        expect(viaWorker.width, direct.width);
-        expect(viaWorker.quality, direct.quality);
-        expect(sawProgress, isTrue, reason: 'progress must cross the isolate boundary');
-      } finally {
-        pool.dispose();
-      }
-    }, timeout: const Timeout(Duration(minutes: 2)));
-
-    test('one failure does not take down the batch', () async {
-      final pool = await WorkerPool.create(size: 2);
-      try {
-        final good = _makeJpeg(300, 200);
-        final bad = Uint8List.fromList(List.filled(64, 7));
-        final json = sizedSettings().toJson();
-
-        EngineResult? okResult;
-        Object? badError;
-        Future<void> runGood() async {
-          final m = await pool.run(
-            IsolateMessage(id: pool.nextId(), settingsJson: json, source: good, name: 'ok.jpg'),
           );
-          okResult = EngineResult.fromMap(m.first);
-        }
 
-        Future<void> runBad() async {
-          try {
-            await pool.run(
-              IsolateMessage(id: pool.nextId(), settingsJson: json, source: bad, name: 'bad.jpg'),
+          var sawProgress = false;
+          final maps = await pool.run(
+            IsolateMessage(
+              id: pool.nextId(),
+              settingsJson: sizedSettings().toJson(),
+              source: src,
+              name: 'w.jpg',
+            ),
+            (_) => sawProgress = true,
+          );
+          final viaWorker = EngineResult.fromMap(maps.first);
+
+          expect(viaWorker.bytes, orderedEquals(direct.bytes));
+          expect(viaWorker.width, direct.width);
+          expect(viaWorker.quality, direct.quality);
+          expect(
+            sawProgress,
+            isTrue,
+            reason: 'progress must cross the isolate boundary',
+          );
+        } finally {
+          pool.dispose();
+        }
+      },
+      timeout: const Timeout(Duration(minutes: 2)),
+    );
+
+    test(
+      'one failure does not take down the batch',
+      () async {
+        final pool = await WorkerPool.create(size: 2);
+        try {
+          final good = _makeJpeg(300, 200);
+          final bad = Uint8List.fromList(List.filled(64, 7));
+          final json = sizedSettings().toJson();
+
+          EngineResult? okResult;
+          Object? badError;
+          Future<void> runGood() async {
+            final m = await pool.run(
+              IsolateMessage(
+                id: pool.nextId(),
+                settingsJson: json,
+                source: good,
+                name: 'ok.jpg',
+              ),
             );
-          } catch (e) {
-            badError = e;
+            okResult = EngineResult.fromMap(m.first);
           }
+
+          Future<void> runBad() async {
+            try {
+              await pool.run(
+                IsolateMessage(
+                  id: pool.nextId(),
+                  settingsJson: json,
+                  source: bad,
+                  name: 'bad.jpg',
+                ),
+              );
+            } catch (e) {
+              badError = e;
+            }
+          }
+
+          await Future.wait([runGood(), runBad()]);
+
+          expect(okResult, isNotNull);
+          expect(okResult!.width, greaterThan(0));
+          expect(badError, isA<EngineError>());
+        } finally {
+          pool.dispose();
         }
+      },
+      timeout: const Timeout(Duration(minutes: 2)),
+    );
 
-        await Future.wait([runGood(), runBad()]);
-
-        expect(okResult, isNotNull);
-        expect(okResult!.width, greaterThan(0));
-        expect(badError, isA<EngineError>());
-      } finally {
-        pool.dispose();
-      }
-    }, timeout: const Timeout(Duration(minutes: 2)));
-
-    test('concurrency never exceeds the pool size', () async {
-      final pool = await WorkerPool.create(size: 2);
-      try {
-        expect(pool.size, 2);
-        expect(pool.busyCount, 0);
-        final json = sizedSettings().toJson();
-        final src = _makeJpeg(200, 150);
-        final f1 = pool.run(IsolateMessage(id: pool.nextId(), settingsJson: json, source: src, name: 'a.jpg'));
-        final f2 = pool.run(IsolateMessage(id: pool.nextId(), settingsJson: json, source: src, name: 'b.jpg'));
-        // Both dispatched synchronously; the pool holds exactly two workers.
-        await Future.wait([f1, f2]);
-        expect(pool.busyCount, 0);
-      } finally {
-        pool.dispose();
-      }
-    }, timeout: const Timeout(Duration(minutes: 2)));
+    test(
+      'concurrency never exceeds the pool size',
+      () async {
+        final pool = await WorkerPool.create(size: 2);
+        try {
+          expect(pool.size, 2);
+          expect(pool.busyCount, 0);
+          final json = sizedSettings().toJson();
+          final src = _makeJpeg(200, 150);
+          final f1 = pool.run(
+            IsolateMessage(
+              id: pool.nextId(),
+              settingsJson: json,
+              source: src,
+              name: 'a.jpg',
+            ),
+          );
+          final f2 = pool.run(
+            IsolateMessage(
+              id: pool.nextId(),
+              settingsJson: json,
+              source: src,
+              name: 'b.jpg',
+            ),
+          );
+          // Both dispatched synchronously; the pool holds exactly two workers.
+          await Future.wait([f1, f2]);
+          expect(pool.busyCount, 0);
+        } finally {
+          pool.dispose();
+        }
+      },
+      timeout: const Timeout(Duration(minutes: 2)),
+    );
   });
 
   group('native', () {
@@ -891,12 +976,12 @@ void main() {
       try {
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(SystemPicker.channel, (call) async {
-          expect(call.method, 'pickImages');
-          return [
-            {'name': 'a.heic', 'bytes': png},
-            {'name': 'empty.jpg', 'bytes': Uint8List(0)},
-          ];
-        });
+              expect(call.method, 'pickImages');
+              return [
+                {'name': 'a.heic', 'bytes': png},
+                {'name': 'empty.jpg', 'bytes': Uint8List(0)},
+              ];
+            });
         final out = await SystemPicker.pickImages();
         expect(out, hasLength(1));
         expect(out!.first.name, 'a.heic');
@@ -912,8 +997,8 @@ void main() {
       try {
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(SystemPicker.channel, (call) async {
-          throw PlatformException(code: 'UNSUPPORTED');
-        });
+              throw PlatformException(code: 'UNSUPPORTED');
+            });
         expect(await SystemPicker.pickImages(), isNull);
       } finally {
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -928,9 +1013,9 @@ void main() {
         var called = false;
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(SystemPicker.channel, (call) async {
-          called = true;
-          return null;
-        });
+              called = true;
+              return null;
+            });
         expect(await SystemPicker.pickImages(), isNull);
         expect(called, isFalse);
       } finally {
@@ -951,11 +1036,13 @@ void main() {
         // Library absent (CI Linux, macOS): the failure must name libheif.
         expect(
           () => Libheif.decode(bytes),
-          throwsA(isA<EngineError>().having(
-            (e) => e.message,
-            'message',
-            contains('libheif'),
-          )),
+          throwsA(
+            isA<EngineError>().having(
+              (e) => e.message,
+              'message',
+              contains('libheif'),
+            ),
+          ),
         );
         return;
       }
@@ -982,10 +1069,12 @@ void main() {
         var called = false;
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(NativeDecoder.channel, (call) async {
-          called = true;
-          return null;
-        });
-        final out = await NativeDecoder.decodeToPng(Uint8List.fromList([1, 2, 3]));
+              called = true;
+              return null;
+            });
+        final out = await NativeDecoder.decodeToPng(
+          Uint8List.fromList([1, 2, 3]),
+        );
         expect(out, isNull);
         expect(called, isFalse);
       } finally {
@@ -996,15 +1085,16 @@ void main() {
     });
 
     test('decodes through a mocked platform channel', () async {
-      debugDefaultTargetPlatformOverride = TargetPlatform.android;      final png = img.encodePng(
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      final png = img.encodePng(
         img.Image(width: 40, height: 30, numChannels: 3),
       );
       try {
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(NativeDecoder.channel, (call) async {
-          expect(call.method, 'decodeImage');
-          return png;
-        });
+              expect(call.method, 'decodeImage');
+              return png;
+            });
         final decoded = await ResizeEngine.decodeAsync(
           Uint8List.fromList([9, 9, 9]),
           'photo.heic',
@@ -1027,10 +1117,10 @@ void main() {
       try {
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(NativeDecoder.channel, (call) async {
-          expect(call.method, 'decodeImage');
-          expect((call.arguments as Map)['bytes'], isA<Uint8List>());
-          return png;
-        });
+              expect(call.method, 'decodeImage');
+              expect((call.arguments as Map)['bytes'], isA<Uint8List>());
+              return png;
+            });
         final decoded = await ResizeEngine.decodeAsync(
           Uint8List.fromList([7, 7, 7]),
           'photo.heic',
@@ -1049,24 +1139,34 @@ void main() {
       try {
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(NativeDecoder.channel, (call) async {
-          throw PlatformException(code: 'DECODE', message: 'nope');
-        });
+              throw PlatformException(code: 'DECODE', message: 'nope');
+            });
         final s = ResizeSettings()..setFormat(OutputFormat.jpeg);
         // Whatever the environment provides, a dead channel must end in a
         // clear EngineError, never a crash and never silence. With libheif
         // present the error names libheif; without it, the HEIC fallback.
         if (Libheif.load() == null) {
           expect(
-            () => ResizeEngine.run(Uint8List.fromList([9, 9, 9]), s, name: 'photo.heic'),
-            throwsA(isA<EngineError>().having(
-              (e) => e.message,
-              'message',
-              contains('HEIC'),
-            )),
+            () => ResizeEngine.run(
+              Uint8List.fromList([9, 9, 9]),
+              s,
+              name: 'photo.heic',
+            ),
+            throwsA(
+              isA<EngineError>().having(
+                (e) => e.message,
+                'message',
+                contains('HEIC'),
+              ),
+            ),
           );
         } else {
           expect(
-            () => ResizeEngine.run(Uint8List.fromList([9, 9, 9]), s, name: 'photo.heic'),
+            () => ResizeEngine.run(
+              Uint8List.fromList([9, 9, 9]),
+              s,
+              name: 'photo.heic',
+            ),
             throwsA(isA<EngineError>()),
           );
         }
@@ -1085,17 +1185,17 @@ void main() {
       try {
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(SharedContent.channel, (call) async {
-          if (call.method == 'getSharedImages') {
-            return [
-              {'name': 'shared.png', 'bytes': png},
-            ];
-          }
-          if (call.method == 'saveToGallery') {
-            expect((call.arguments as Map)['name'], 'out.png');
-            return null;
-          }
-          throw PlatformException(code: 'UNIMPLEMENTED');
-        });
+              if (call.method == 'getSharedImages') {
+                return [
+                  {'name': 'shared.png', 'bytes': png},
+                ];
+              }
+              if (call.method == 'saveToGallery') {
+                expect((call.arguments as Map)['name'], 'out.png');
+                return null;
+              }
+              throw PlatformException(code: 'UNIMPLEMENTED');
+            });
         final got = await SharedContent.collect();
         expect(got, hasLength(1));
         expect(got!.first.name, 'shared.png');
@@ -1113,9 +1213,9 @@ void main() {
         var called = false;
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(SharedContent.channel, (call) async {
-          called = true;
-          return null;
-        });
+              called = true;
+              return null;
+            });
         expect(await SharedContent.collect(), isNull);
         expect(
           await SharedContent.saveToGallery(Uint8List.fromList([1]), 'x.png'),
@@ -1141,9 +1241,9 @@ void main() {
     }
 
     List<({String name, Uint8List bytes, String? path})> makeFiles(int n) => [
-          for (var i = 0; i < n; i++)
-            (name: 'c$i.jpg', bytes: _makeJpeg(300, 200), path: null),
-        ];
+      for (var i = 0; i < n; i++)
+        (name: 'c$i.jpg', bytes: _makeJpeg(300, 200), path: null),
+    ];
 
     test('a pre-cancelled token skips instead of failing', () async {
       final job = ImageJob(id: 'x', name: 'x.jpg', bytes: _makeJpeg(300, 200));
@@ -1159,42 +1259,50 @@ void main() {
       expect(job.output, isNull);
     });
 
-    test('cancelling mid-batch keeps finished work and skips the rest', () async {
-      final c = makeController();
-      c.addDroppedFiles(makeFiles(6));
-      var cancelled = false;
-      c.addListener(() {
-        if (!cancelled && c.doneCount >= 1) {
-          cancelled = true;
-          c.cancelBatch();
+    test(
+      'cancelling mid-batch keeps finished work and skips the rest',
+      () async {
+        final c = makeController();
+        c.addDroppedFiles(makeFiles(6));
+        var cancelled = false;
+        c.addListener(() {
+          if (!cancelled && c.doneCount >= 1) {
+            cancelled = true;
+            c.cancelBatch();
+          }
+        });
+        await c.runBatch();
+        expect(cancelled, isTrue);
+        for (final j in c.jobs) {
+          expect(j.status, isNot(JobStatus.running));
+          expect(j.status, isNot(JobStatus.queued));
         }
-      });
-      await c.runBatch();
-      expect(cancelled, isTrue);
-      for (final j in c.jobs) {
-        expect(j.status, isNot(JobStatus.running));
-        expect(j.status, isNot(JobStatus.queued));
-      }
-      expect(c.doneCount, greaterThanOrEqualTo(1));
-      expect(
-        c.jobs.where((j) => j.status == JobStatus.failed),
-        isEmpty,
-        reason: 'interruption is a skip, never a failure',
-      );
-      c.dispose();
-    }, timeout: const Timeout(Duration(minutes: 2)));
+        expect(c.doneCount, greaterThanOrEqualTo(1));
+        expect(
+          c.jobs.where((j) => j.status == JobStatus.failed),
+          isEmpty,
+          reason: 'interruption is a skip, never a failure',
+        );
+        c.dispose();
+      },
+      timeout: const Timeout(Duration(minutes: 2)),
+    );
 
-    test('cancel is safe twice and after completion', () async {
-      final c = makeController();
-      c.addDroppedFiles(makeFiles(2));
-      await c.runBatch();
-      expect(c.doneCount, 2);
-      c.cancelBatch();
-      c.cancelBatch();
-      expect(c.doneCount, 2);
-      expect(c.busy, isFalse);
-      c.dispose();
-    }, timeout: const Timeout(Duration(minutes: 2)));
+    test(
+      'cancel is safe twice and after completion',
+      () async {
+        final c = makeController();
+        c.addDroppedFiles(makeFiles(2));
+        await c.runBatch();
+        expect(c.doneCount, 2);
+        c.cancelBatch();
+        c.cancelBatch();
+        expect(c.doneCount, 2);
+        expect(c.busy, isFalse);
+        c.dispose();
+      },
+      timeout: const Timeout(Duration(minutes: 2)),
+    );
   });
 
   group('streaming', () {
@@ -1208,9 +1316,9 @@ void main() {
     }
 
     List<({String name, Uint8List bytes, String? path})> makeFiles(int n) => [
-          for (var i = 0; i < n; i++)
-            (name: 's$i.jpg', bytes: _makeJpeg(300, 200), path: null),
-        ];
+      for (var i = 0; i < n; i++)
+        (name: 's$i.jpg', bytes: _makeJpeg(300, 200), path: null),
+    ];
 
     test('a released source keeps its thumbnail', () {
       final job = ImageJob(id: 't', name: 't.jpg', bytes: _makeJpeg(100, 80));
@@ -1222,57 +1330,72 @@ void main() {
       expect(job.inputBytes, 0);
     });
 
-    test('saveAll releases sources once written', () async {
-      final c = makeController();
-      final dir = await Directory.systemTemp.createTemp('pf-save');
-      try {
-        c.settings.setOutputDirectory(dir.path);
-        c.addDroppedFiles(makeFiles(2));
-        await c.runBatch();
-        expect(c.doneCount, 2);
-        final written = await c.saveAll();
-        expect(written, 2);
-        for (final j in c.jobs) {
-          expect(j.hasSource, isFalse);
-          expect(j.output, isNotNull);
+    test(
+      'saveAll releases sources once written',
+      () async {
+        final c = makeController();
+        final dir = await Directory.systemTemp.createTemp('pf-save');
+        try {
+          c.settings.setOutputDirectory(dir.path);
+          c.addDroppedFiles(makeFiles(2));
+          await c.runBatch();
+          expect(c.doneCount, 2);
+          final written = await c.saveAll();
+          expect(written, 2);
+          for (final j in c.jobs) {
+            expect(j.hasSource, isFalse);
+            expect(j.output, isNotNull);
+          }
+          expect(dir.listSync(), hasLength(2));
+        } finally {
+          await dir.delete(recursive: true);
+          c.dispose();
         }
-        expect(dir.listSync(), hasLength(2));
-      } finally {
-        await dir.delete(recursive: true);
-        c.dispose();
-      }
-    }, timeout: const Timeout(Duration(minutes: 2)));
+      },
+      timeout: const Timeout(Duration(minutes: 2)),
+    );
 
-    test('write-immediately streams each file and frees its source', () async {
-      final c = makeController();
-      final dir = await Directory.systemTemp.createTemp('pf-now');
-      try {
-        c.settings
-          ..setOutputDirectory(dir.path)
-          ..setWriteImmediately(true);
-        c.addDroppedFiles(makeFiles(3));
-        await c.runBatch();
-        expect(c.doneCount, 3);
-        expect(dir.listSync(), hasLength(3));
-        for (final j in c.jobs) {
-          expect(j.hasSource, isFalse,
-              reason: 'streamed jobs must not retain their inputs');
+    test(
+      'write-immediately streams each file and frees its source',
+      () async {
+        final c = makeController();
+        final dir = await Directory.systemTemp.createTemp('pf-now');
+        try {
+          c.settings
+            ..setOutputDirectory(dir.path)
+            ..setWriteImmediately(true);
+          c.addDroppedFiles(makeFiles(3));
+          await c.runBatch();
+          expect(c.doneCount, 3);
+          expect(dir.listSync(), hasLength(3));
+          for (final j in c.jobs) {
+            expect(
+              j.hasSource,
+              isFalse,
+              reason: 'streamed jobs must not retain their inputs',
+            );
+          }
+        } finally {
+          await dir.delete(recursive: true);
+          c.dispose();
         }
-      } finally {
-        await dir.delete(recursive: true);
-        c.dispose();
-      }
-    }, timeout: const Timeout(Duration(minutes: 2)));
+      },
+      timeout: const Timeout(Duration(minutes: 2)),
+    );
 
-    test('an oversized batch is chunked, not refused', () async {
-      final c = makeController();
-      // 64 MB budget with ~1 MB inputs forces several chunks.
-      c.settings.setMemoryBudgetMb(64);
-      c.addDroppedFiles(makeFiles(4));
-      await c.runBatch();
-      expect(c.doneCount, 4);
-      c.dispose();
-    }, timeout: const Timeout(Duration(minutes: 2)));
+    test(
+      'an oversized batch is chunked, not refused',
+      () async {
+        final c = makeController();
+        // 64 MB budget with ~1 MB inputs forces several chunks.
+        c.settings.setMemoryBudgetMb(64);
+        c.addDroppedFiles(makeFiles(4));
+        await c.runBatch();
+        expect(c.doneCount, 4);
+        c.dispose();
+      },
+      timeout: const Timeout(Duration(minutes: 2)),
+    );
 
     test('a job without a source is skipped with a reason', () async {
       final c = makeController();
@@ -1300,10 +1423,17 @@ void main() {
         ..setWidth(200)
         ..setFormat(OutputFormat.jpeg);
 
-      final res = await ResizeEngine.run(_makePngAlpha(600, 400), s, name: 'a.png');
+      final res = await ResizeEngine.run(
+        _makePngAlpha(600, 400),
+        s,
+        name: 'a.png',
+      );
       expect(res.width, 200);
-      expect(ResizeEngine.lastWorkingChannels, 3,
-          reason: 'JPEG output with no watermark and no pad never needs alpha');
+      expect(
+        ResizeEngine.lastWorkingChannels,
+        3,
+        reason: 'JPEG output with no watermark and no pad never needs alpha',
+      );
     });
 
     test('transparent output keeps its alpha', () async {
@@ -1324,8 +1454,11 @@ void main() {
         ..setWatermark(const WatermarkSettings(text: 'X', enabled: true));
 
       await ResizeEngine.run(_makePngAlpha(600, 400), s, name: 'a.png');
-      expect(ResizeEngine.lastWorkingChannels, 4,
-          reason: 'the watermark layer composites with alpha blending');
+      expect(
+        ResizeEngine.lastWorkingChannels,
+        4,
+        reason: 'the watermark layer composites with alpha blending',
+      );
     });
 
     test('pad mode keeps alpha for the canvas', () async {

@@ -643,10 +643,10 @@ class ResizeSettings extends ChangeNotifier {
     'webm': _webpMethod,
     'chroma': _chroma.name,
     'strip': _stripMetadata,
-        'stripGps': _stripGps,
-        'stripCam': _stripCamera,
-        'stripTs': _stripTimestamps,
-        'stripThumb': _stripThumbnail,
+    'stripGps': _stripGps,
+    'stripCam': _stripCamera,
+    'stripTs': _stripTimestamps,
+    'stripThumb': _stripThumbnail,
     'autorot': _autoRotate,
     'prog': _progressive,
     'anim': _preserveAnimation,
@@ -662,10 +662,10 @@ class ResizeSettings extends ChangeNotifier {
     'wm': _watermark.toJson(),
     'tmpl': _nameTemplate,
     'outdir': _outputDirectory,
-'ow': _overwrite,
-        'keepext': _keepExtensionWhenKeepFormat,
-        'writeNow': _writeImmediately,
-        'memMb': _memoryBudgetMb,
+    'ow': _overwrite,
+    'keepext': _keepExtensionWhenKeepFormat,
+    'writeNow': _writeImmediately,
+    'memMb': _memoryBudgetMb,
   };
 
   void _hydrateFrom(Map<String, dynamic>? j) {
@@ -720,8 +720,10 @@ class ResizeSettings extends ChangeNotifier {
     _keepExtensionWhenKeepFormat =
         (j['keepext'] as bool?) ?? _keepExtensionWhenKeepFormat;
     _writeImmediately = (j['writeNow'] as bool?) ?? _writeImmediately;
-    _memoryBudgetMb =
-        ((j['memMb'] as num?)?.toInt() ?? _memoryBudgetMb).clamp(64, 8192);
+    _memoryBudgetMb = ((j['memMb'] as num?)?.toInt() ?? _memoryBudgetMb).clamp(
+      64,
+      8192,
+    );
   }
 
   static const _storeKey = 'pixelforge.settings.v1';
@@ -742,7 +744,7 @@ class ResizeSettings extends ChangeNotifier {
     _webpLossless = false;
     _webpMethod = 4;
     _chroma = ChromaMode.yuv444;
-_stripMetadata = true;
+    _stripMetadata = true;
     _stripGps = true;
     _stripCamera = true;
     _stripTimestamps = true;

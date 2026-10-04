@@ -14,8 +14,9 @@ import 'package:flutter/services.dart';
 class NativeDecoder {
   const NativeDecoder._();
 
-  static const MethodChannel channel =
-      MethodChannel('dev.pixelforge/native_decoder');
+  static const MethodChannel channel = MethodChannel(
+    'dev.pixelforge/native_decoder',
+  );
 
   static const List<String> heifFamily = ['heic', 'heif', 'avif'];
 
@@ -40,10 +41,9 @@ class NativeDecoder {
   static Future<Uint8List?> decodeToPng(Uint8List bytes) async {
     if (!isNativeCapable) return null;
     try {
-      return await channel.invokeMethod<Uint8List>(
-        'decodeImage',
-        {'bytes': bytes},
-      );
+      return await channel.invokeMethod<Uint8List>('decodeImage', {
+        'bytes': bytes,
+      });
     } on PlatformException {
       return null;
     } on MissingPluginException {

@@ -383,8 +383,8 @@ class _PreviewPaneState extends State<_PreviewPane> {
     final bytes = job == null
         ? null
         : (_showOriginal
-            ? (job.hasSource ? job.bytes : job.thumbnail)
-            : (job.output ?? (job.hasSource ? job.bytes : job.thumbnail)));
+              ? (job.hasSource ? job.bytes : job.thumbnail)
+              : (job.output ?? (job.hasSource ? job.bytes : job.thumbnail)));
     final label = job == null
         ? null
         : (_showOriginal
@@ -520,9 +520,7 @@ class _ResultBar extends StatelessWidget {
     final error = await SharedContent.saveToGallery(output, job.name);
     if (!context.mounted) return;
     messenger.showSnackBar(
-      SnackBar(
-        content: Text(error ?? 'Saved ${job.name} to the gallery'),
-      ),
+      SnackBar(content: Text(error ?? 'Saved ${job.name} to the gallery')),
     );
   }
 

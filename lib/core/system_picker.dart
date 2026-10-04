@@ -11,8 +11,9 @@ import 'package:flutter/services.dart';
 class SystemPicker {
   const SystemPicker._();
 
-  static const MethodChannel channel =
-      MethodChannel('dev.pixelforge/system_picker');
+  static const MethodChannel channel = MethodChannel(
+    'dev.pixelforge/system_picker',
+  );
 
   /// Cap per pick. A larger selection risks OOM before the batch memory guard
   /// ever sees it, because these bytes arrive all at once.
@@ -24,7 +25,7 @@ class SystemPicker {
           defaultTargetPlatform == TargetPlatform.iOS);
 
   static Future<List<({String name, Uint8List bytes, String? path})>?>
-      pickImages() async {
+  pickImages() async {
     if (!isMobile) return null;
     try {
       final raw = await channel.invokeMethod<List<dynamic>>('pickImages');

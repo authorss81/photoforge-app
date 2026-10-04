@@ -225,9 +225,13 @@ class ResizeController extends ChangeNotifier {
 
     // Sources released after an earlier write cannot run again.
     for (final j in targets.where((j) => !j.hasSource)) {
-      j.markSkipped('Source was released after writing; re-add the file to run it again.');
+      j.markSkipped(
+        'Source was released after writing; re-add the file to run it again.',
+      );
     }
-    targets = targets.where((j) => j.hasSource && j.status != JobStatus.done).toList();
+    targets = targets
+        .where((j) => j.hasSource && j.status != JobStatus.done)
+        .toList();
     if (targets.isEmpty) {
       _changed();
       return;
@@ -275,8 +279,11 @@ class ResizeController extends ChangeNotifier {
         // not exist in worker isolates. They run on the main isolate, which
         // also keeps their progress reporting exact rather than interpolated.
         final native = chunk
-            .where((j) => NativeDecoder.isHeifFamily(
-                ResizeEngine.extensionOfName(j.name)))
+            .where(
+              (j) => NativeDecoder.isHeifFamily(
+                ResizeEngine.extensionOfName(j.name),
+              ),
+            )
             .toList();
         final regular = chunk.where((j) => !native.contains(j)).toList();
         for (var i = 0; i < native.length; i++) {

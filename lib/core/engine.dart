@@ -30,15 +30,15 @@ class EngineResult {
   /// Isolates can only carry primitives, maps and typed data, so results
   /// cross the boundary as maps and are rehydrated here.
   factory EngineResult.fromMap(Map<String, dynamic> m) => EngineResult(
-        bytes: m['bytes'] as Uint8List,
-        width: m['width'] as int,
-        height: m['height'] as int,
-        extension: m['extension'] as String,
-        quality: m['quality'] as int?,
-        metTarget: (m['metTarget'] as bool?) ?? true,
-        frames: (m['frames'] as int?) ?? 1,
-        notice: m['notice'] as String?,
-      );
+    bytes: m['bytes'] as Uint8List,
+    width: m['width'] as int,
+    height: m['height'] as int,
+    extension: m['extension'] as String,
+    quality: m['quality'] as int?,
+    metTarget: (m['metTarget'] as bool?) ?? true,
+    frames: (m['frames'] as int?) ?? 1,
+    notice: m['notice'] as String?,
+  );
 
   final Uint8List bytes;
   final int width;
@@ -145,7 +145,10 @@ class ResizeEngine {
       if (bytes[i] != 0xFF) return false;
       final marker = bytes[i + 1];
       // Standalone markers carry no length.
-      if (marker == 0xD8 || marker == 0xD9 || (marker >= 0xD0 && marker <= 0xD7) || marker == 0x01) {
+      if (marker == 0xD8 ||
+          marker == 0xD9 ||
+          (marker >= 0xD0 && marker <= 0xD7) ||
+          marker == 0x01) {
         i += 2;
         continue;
       }
@@ -153,7 +156,8 @@ class ResizeEngine {
       final length = (bytes[i + 2] << 8) | bytes[i + 3];
       if (length < 2) return false;
       // SOF0-SOF15 except DHT (C4), JPG (C8) and DAC (CC).
-      final isSof = marker >= 0xC0 &&
+      final isSof =
+          marker >= 0xC0 &&
           marker <= 0xCF &&
           marker != 0xC4 &&
           marker != 0xC8 &&
@@ -339,7 +343,7 @@ class ResizeEngine {
           name: name,
           onProgress: onProgress,
           cancellation: cancellation,
-        )
+        ),
       ];
     }
 
@@ -363,7 +367,7 @@ class ResizeEngine {
     return results;
   }
 
-/// One decode feeding any number of presets. Each preset renders from a clone,
+  /// One decode feeding any number of presets. Each preset renders from a clone,
   /// so per-preset transforms cannot leak into each other, and each preset
   /// solves its own quality against its own byte budget. Returns one list of
   /// results per preset, in preset order.
@@ -457,7 +461,8 @@ class ResizeEngine {
           );
 
     final budget = s.targetKb == null ? null : s.targetKb! * 1024;
-    if (budget != null && outFormat.supportsQuality) {      final solved = _solveToBudget(
+    if (budget != null && outFormat.supportsQuality) {
+      final solved = _solveToBudget(
         work,
         outFormat,
         s,
@@ -1019,15 +1024,15 @@ class ResizeEngine {
     }
 
     EngineResult finish(Uint8List bytes, int q, bool met) => EngineResult(
-          bytes: bytes,
-          width: im.width,
-          height: im.height,
-          extension: fmt.extension!,
-          quality: q,
-          frames: frameCount,
-          metTarget: met,
-          notice: notice,
-        );
+      bytes: bytes,
+      width: im.width,
+      height: im.height,
+      extension: fmt.extension!,
+      quality: q,
+      frames: frameCount,
+      metTarget: met,
+      notice: notice,
+    );
 
     // Proxy: frame zero, longest edge around 512px. Byte count scales close to
     // linearly with pixel count, so the budget scales by the pixel ratio and
@@ -1047,7 +1052,8 @@ class ResizeEngine {
     } else {
       proxy = src0;
     }
-    final ratio = (proxy.width * proxy.height) /
+    final ratio =
+        (proxy.width * proxy.height) /
         math.max(1, im.width * im.height) /
         math.max(1, frameCount);
     final proxyBudget = math.max(64, (budgetBytes * ratio).round());
@@ -1082,9 +1088,9 @@ class ResizeEngine {
     return finish(bytes, corrected, bytes.length <= budgetBytes);
   }
 
-/// The pre-phase-04 solver: binary search with full-resolution encodes.
-/// Kept as the reference so tests can prove the proxy path agrees with it.
-/// Do not call from production code.
+  /// The pre-phase-04 solver: binary search with full-resolution encodes.
+  /// Kept as the reference so tests can prove the proxy path agrees with it.
+  /// Do not call from production code.
   static EngineResult solveToBudgetLegacy(
     img.Image im,
     OutputFormat fmt,

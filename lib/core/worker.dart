@@ -25,12 +25,12 @@ class IsolateMessage {
   final String? name;
 
   Map<String, dynamic> toMessage(SendPort replyTo) => {
-        'id': id,
-        'settings': settingsJson,
-        'source': source,
-        'name': name,
-        'replyTo': replyTo,
-      };
+    'id': id,
+    'settings': settingsJson,
+    'source': source,
+    'name': name,
+    'replyTo': replyTo,
+  };
 }
 
 /// Entry point for every worker isolate. Top-level, so the VM can spawn it.
@@ -149,7 +149,8 @@ class WorkerPool {
   ]) {
     final worker = _workers.firstWhere(
       (w) => !w.busy,
-      orElse: () => throw StateError('no free worker; the pool is oversubscribed'),
+      orElse: () =>
+          throw StateError('no free worker; the pool is oversubscribed'),
     );
     worker.busy = true;
     _byId[message.id] = worker;

@@ -57,10 +57,9 @@ void main() {
       // and this test is where it gets argued about.
       const allowed = {'NSPhotoLibraryAddUsageDescription'};
       final text = plist.readAsStringSync();
-      final keys = RegExp(r'<key>(NS[A-Za-z]+UsageDescription)</key>')
-          .allMatches(text)
-          .map((m) => m.group(1)!)
-          .toSet();
+      final keys = RegExp(
+        r'<key>(NS[A-Za-z]+UsageDescription)</key>',
+      ).allMatches(text).map((m) => m.group(1)!).toSet();
       final extra = keys.difference(allowed);
       expect(extra, isEmpty, reason: 'unexpected iOS permissions: $extra');
     });
