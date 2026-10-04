@@ -259,14 +259,30 @@ jobs:
       - name: Verify the emulator can start
         run: |
           set -uo pipefail
-          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
-          EMU="$SDK/emulator/emulator"
-          if [ ! -x "$EMU" ]; then
-            echo "::error::no emulator binary at $EMU"
+          # Locate the emulator rather than assuming a path. The runner sets
+          # ANDROID_SDK_ROOT, and ANDROID_HOME is not guaranteed to be the same
+          # directory, so every candidate is searched.
+          echo "ANDROID_HOME=${ANDROID_HOME:-unset}"
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-unset}"
+          EMU=""
+          for root in "${ANDROID_SDK_ROOT:-}" "${ANDROID_HOME:-}" /usr/local/lib/android/sdk; do
+            [ -n "$root" ] || continue
+            if [ -x "$root/emulator/emulator" ]; then
+              EMU="$root/emulator/emulator"
+              break
+            fi
+          done
+          if [ -z "$EMU" ]; then
+            echo "::error::no emulator binary found in any SDK root"
+            echo "searched:"
+            for root in "${ANDROID_SDK_ROOT:-}" "${ANDROID_HOME:-}" /usr/local/lib/android/sdk; do
+              echo "  $root/emulator/emulator"
+            done
             exit 1
           fi
-          echo "$EMU -version:"
-          "$EMU" -version 2>&1 | head -5 || true
+          echo "found emulator: $EMU"
+          echo "--- version ---"
+          "$EMU" -version 2>&1 | head -3 || true
           echo "--- unresolved shared objects ---"
           # Captured then filtered, for the same SIGPIPE reason as above.
           MISSING="$(ldd "$EMU" 2>/dev/null | grep "not found" || true)"
@@ -283,7 +299,20 @@ jobs:
           # adb is not on PATH on this image. It lives in the SDK's
           # platform-tools, which is also where the emulator action looks, so
           # the path is added to the job rather than assumed.
-          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          # Both roots are searched, for the same reason as the probe above: the
+          # runner sets ANDROID_SDK_ROOT and ANDROID_HOME is not guaranteed to
+          # be the same directory.
+          SDK=""
+          for root in "${ANDROID_SDK_ROOT:-}" "${ANDROID_HOME:-}" /usr/local/lib/android/sdk; do
+            if [ -n "$root" ] && [ -d "$root/platform-tools" ]; then
+              SDK="$root"
+              break
+            fi
+          done
+          if [ -z "$SDK" ]; then
+            echo "::error::no Android SDK with platform-tools found"
+            exit 1
+          fi
           echo "SDK=$SDK"
           export PATH="$SDK/platform-tools:$SDK/emulator:$PATH"
           echo "$SDK/platform-tools" >> "$GITHUB_PATH"
