@@ -18,6 +18,16 @@ Uint8List _makeJpeg(int w, int h, {int quality = 92}) {
   return img.encodeJpg(im, quality: quality);
 }
 
+Uint8List _makePngAlpha(int w, int h) {
+  final im = img.Image(width: w, height: h, numChannels: 4);
+  for (var y = 0; y < h; y++) {
+    for (var x = 0; x < w; x++) {
+      im.setPixelRgba(x, y, (x * 255 ~/ w), (y * 255 ~/ h), 128, (x * 255 ~/ w));
+    }
+  }
+  return img.encodePng(im);
+}
+
 /// A gradient whose blue channel is a per-frame constant, so every frame is
 /// still distinguishable from every other one after a resize and a lossy
 /// re-encode. Mean blue is the statistic that proves it.
@@ -477,6 +487,60 @@ void main() {
         ),
         throwsA(isA<EngineError>()),
       );
+    });
+  });
+
+  group('memory', () {
+    test('scaled decode is documented as unsupported', () {
+      // If anyone implements it, this test must be updated to assert the new
+      // capability instead of the limitation. A comment claiming otherwise
+      // without this test changing is the failure this guards against.
+      expect(ResizeEngine.supportsScaledDecode, isFalse);
+    });
+
+    test('opaque output drops alpha at the earliest point', () async {
+      final s = ResizeSettings()
+        ..setMode(ResizeMode.width)
+        ..setWidth(200)
+        ..setFormat(OutputFormat.jpeg);
+
+      final res = await ResizeEngine.run(_makePngAlpha(600, 400), s, name: 'a.png');
+      expect(res.width, 200);
+      expect(ResizeEngine.lastWorkingChannels, 3,
+          reason: 'JPEG output with no watermark and no pad never needs alpha');
+    });
+
+    test('transparent output keeps its alpha', () async {
+      final s = ResizeSettings()
+        ..setMode(ResizeMode.width)
+        ..setWidth(200)
+        ..setFormat(OutputFormat.png);
+
+      await ResizeEngine.run(_makePngAlpha(600, 400), s, name: 'a.png');
+      expect(ResizeEngine.lastWorkingChannels, 4);
+    });
+
+    test('an active watermark keeps alpha for compositing', () async {
+      final s = ResizeSettings()
+        ..setMode(ResizeMode.width)
+        ..setWidth(200)
+        ..setFormat(OutputFormat.jpeg)
+        ..setWatermark(const WatermarkSettings(text: 'X', enabled: true));
+
+      await ResizeEngine.run(_makePngAlpha(600, 400), s, name: 'a.png');
+      expect(ResizeEngine.lastWorkingChannels, 4,
+          reason: 'the watermark layer composites with alpha blending');
+    });
+
+    test('pad mode keeps alpha for the canvas', () async {
+      final s = ResizeSettings()
+        ..setMode(ResizeMode.exactFit)
+        ..setWidth(300)
+        ..setHeight(300)
+        ..setFormat(OutputFormat.jpeg);
+
+      await ResizeEngine.run(_makePngAlpha(600, 400), s, name: 'a.png');
+      expect(ResizeEngine.lastWorkingChannels, 4);
     });
   });
 

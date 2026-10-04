@@ -121,6 +121,22 @@ img.Color toCodecColor(Color c) => img.ColorRgba8(
 
 /// The pure-Dart image pipeline. No network, no platform channels.
 class ResizeEngine {
+  /// Whether the decoder can scale during the entropy decode (libjpeg 1/8, 1/4,
+  /// 1/2 factors), so a 24 MP source shrunk to 400px never materialises.
+  ///
+  /// False. `package:image` ships its own pure-Dart JPEG decoder with no
+  /// scaled-decode path, and there is no way to add one without replacing the
+  /// decoder. This constant exists so the limitation is a checked-in fact
+  /// rather than tribal knowledge, and so a test fails if anyone claims the
+  /// capability without implementing it. Real scaled decode arrives with the
+  /// native decoders in phases 14 through 16, which scale during decode on
+  /// every platform.
+  static const bool supportsScaledDecode = false;
+
+  /// The most channels any working image carried during the last [run].
+  /// Test observability for the phase-06 memory work, nothing more.
+  static int lastWorkingChannels = 0;
+
   const ResizeEngine._();
 
   static String? extensionOf(String path) {
@@ -172,6 +188,7 @@ class ResizeEngine {
     tick(0.02);
 
     final decoded = _decodeOrThrow(source, name);
+    lastWorkingChannels = 0;
 
     tick(0.10);
 
@@ -340,6 +357,21 @@ class ResizeEngine {
     OutputFormat outFormat,
   ) {
     var work = frame;
+
+    // Phase-06: drop alpha at the earliest point the rest of the pipeline
+    // provably does not need it. A 24 MP RGBA image is ~96 MB resident; RGB is
+    // ~72 MB, and the saving compounds across every intermediate allocation.
+    // Safe only when nothing downstream touches transparency: opaque output
+    // container, no watermark compositing, and no pad canvas.
+    if (work.hasAlpha &&
+        (outFormat == OutputFormat.jpeg || outFormat == OutputFormat.bmp) &&
+        !s.watermark.active &&
+        s.spec.mode != ResizeMode.exactFit) {
+      work = work.convert(numChannels: 3);
+    }
+    if (work.numChannels > lastWorkingChannels) {
+      lastWorkingChannels = work.numChannels;
+    }
 
     if (geometry.crop != CropPlan.none) {
       work = img.copyCrop(
