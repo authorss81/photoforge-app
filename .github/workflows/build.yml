@@ -59,6 +59,21 @@ jobs:
 
       - run: flutter pub get
 
+      - name: Check goldens are present
+        # Goldens are gitignored and generated on demand, so a tree can
+        # legitimately have no goldens yet. Fail loudly with instructions
+        # rather than passing silently or failing with a confusing
+        # "golden file not found" from inside the test runner.
+        run: |
+          set -euo pipefail
+          if [ -z "$(find test_golden/goldens -name '*.png' 2>/dev/null)" ]; then
+            echo "::error::No golden images found."
+            echo "Run the golden-generate workflow, inspect every image, then"
+            echo "commit the result to test_golden/goldens/."
+            exit 1
+          fi
+          ls -la test_golden/goldens/
+
       - name: Verify goldens
         run: flutter test test_golden/
 
