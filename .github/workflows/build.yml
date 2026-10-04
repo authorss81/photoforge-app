@@ -216,6 +216,19 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      # The emulator binary links against PulseAudio, which the runner image does
+      # not ship, so it dies at startup with "libpulse.so.0: cannot open shared
+      # object file". Installing the library is the fix; -no-audio alone would
+      # only hide it sometimes.
+      - name: Install emulator runtime libraries
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libpulse0 libgl1 libx11-6 libxcb1 libxkbcommon0 libnss3 \
+            libfontconfig1 libfreetype6
+          ldconfig
+
       # The runner image does not put adb on PATH, and the emulator action's first
       # adb call then fails with "unable to connect to adb daemon on port 5037".
       # The SDK path is resolved explicitly and added to the job, and adb is
