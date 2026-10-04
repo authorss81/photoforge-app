@@ -38,7 +38,8 @@ double _median(List<double> xs) {
 
 String _cell(double medianMs, double spreadMs, int bytes) {
   final kb = (bytes / 1024).toStringAsFixed(0);
-  return '${medianMs.toStringAsFixed(0)} ms ±${spreadMs.toStringAsFixed(0)} / ${kb} KB';
+  final spread = spreadMs.toStringAsFixed(0);
+  return '${medianMs.toStringAsFixed(0)} ms ±$spread / $kb KB';
 }
 
 void main() {
