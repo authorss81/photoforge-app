@@ -23,6 +23,9 @@ class MainActivity : FlutterActivity() {
     private var backgroundChannel: MethodChannel? = null
 
     companion object {
+        // Read by BatchService when it fires the notification's cancel action,
+        // so this must stay public.
+        const val EXTRA_CANCEL_BATCH = "pixelforge_cancel_batch"
         private const val REQUEST_PICK_IMAGES = 0x9117
     }
 
@@ -257,10 +260,6 @@ class MainActivity : FlutterActivity() {
             intent.removeExtra(EXTRA_CANCEL_BATCH)
             backgroundChannel?.invokeMethod("onCancel", null)
         }
-    }
-
-    companion object {
-        const val EXTRA_CANCEL_BATCH = "pixelforge_cancel_batch"
     }
 
     /// Stashes shared image URIs for Dart to collect. Reading happens lazily

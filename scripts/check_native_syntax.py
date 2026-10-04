@@ -15,6 +15,7 @@ Usage:
 from __future__ import annotations
 
 import pathlib
+import re
 import sys
 
 PAIRS = [("{", "}"), ("(", ")"), ("[", "]")]
@@ -93,6 +94,18 @@ def check(path: pathlib.Path) -> bool:
             line = _locate(code, open_c, close_c)
             print(f"UNBALANCED {path}: {open_c!r} x{a} vs {close_c!r} x{b} near {line}")
             ok = False
+    # A second companion object brace-balances perfectly but does not compile,
+    # and the Kotlin error ("Only one companion object is allowed per class")
+    # does not point at the constant that went missing. That is exactly how
+    # EXTRA_CANCEL_BATCH became unresolvable here, so it is checked explicitly.
+    companions = len(re.findall(r"\bcompanion\s+object\b", code))
+    if companions > 1:
+        print(
+            f"DUPLICATE {path}: {companions} companion objects, "
+            "a class may declare only one"
+        )
+        ok = False
+
     lines = len(src.splitlines())
     print(f"{'BALANCED ' if ok else 'BROKEN   '}{path} ({lines} lines)")
     return ok
