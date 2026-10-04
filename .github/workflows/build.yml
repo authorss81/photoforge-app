@@ -232,9 +232,16 @@ jobs:
             libpulse0 libgl1 libx11-6 libxcb1 libxkbcommon0 libnss3 \
             libfontconfig1 libfreetype6
           ldconfig
-          # Prove the library the emulator actually dlopens is now resolvable,
-          # so the next failure is not this one again.
-          ldconfig -p | grep -q libpulse.so.0
+          # Prove the library the emulator actually dlopens is now resolvable.
+          # The output is captured first rather than piped into grep -q: grep -q
+          # exits on the first match, which closes the pipe and kills ldconfig
+          # with SIGPIPE, and pipefail then reports the whole step as failed
+          # even though everything worked.
+          CACHE="$(ldconfig -p)"
+          if ! printf '%s' "$CACHE" | grep -q 'libpulse\.so\.0'; then
+            echo "::error::libpulse.so.0 still not resolvable after install"
+            exit 1
+          fi
           echo "libpulse resolved"
 
       # The runner image does not put adb on PATH, and the emulator action's first
@@ -257,7 +264,14 @@ jobs:
           echo "$EMU -version:"
           "$EMU" -version 2>&1 | head -5 || true
           echo "--- unresolved shared objects ---"
-          ldd "$EMU" 2>/dev/null | grep "not found" || echo "(none)"
+          # Captured then filtered, for the same SIGPIPE reason as above.
+          MISSING="$(ldd "$EMU" 2>/dev/null | grep "not found" || true)"
+          if [ -n "$MISSING" ]; then
+            echo "$MISSING"
+            echo "::error::the emulator is missing shared libraries; install them above"
+            exit 1
+          fi
+          echo "(none)"
 
       - name: Prepare adb
         run: |
@@ -273,6 +287,10 @@ jobs:
           adb kill-server || true
           adb start-server
           adb devices
+          # Counting rather than grepping, for the same SIGPIPE reason: grep -c
+          # reads all input, but a bare grep -q would kill the producer.
+          COUNT="$(adb devices | grep -c 'device$' || true)"
+          echo "devices ready: $COUNT"
 
       - uses: reactivecircus/android-emulator-runner@v2
         with:
