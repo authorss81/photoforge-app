@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart' show Color;
 import 'package:image/image.dart' as img;
 
+import 'detection/face_detector.dart';
 import 'job.dart';
 import 'error.dart';
 import 'native_decoder.dart';
@@ -396,6 +397,18 @@ class ResizeEngine {
   }) async {
     void tick(double v) => onProgress?.call(v.clamp(0.0, 1.0));
 
+    // Detect once per image, not once per page and not once per frame, and only
+    // when the feature is on and the mode can actually use a focal point.
+    // Anything other than an empty result leaves the crop untouched, so a
+    // missing or unavailable detector costs nothing.
+    List<({double x, double y})> faces = const [];
+    if (s.faceAwareCrop && s.spec.mode == ResizeMode.exactCrop) {
+      final detection = await FaceDetector.detect(decoded);
+      if (detection.isAvailable) {
+        faces = [for (final f in detection.faces) f.centre];
+      }
+    }
+
     final pages =
         decoded.frameType == img.FrameType.page && decoded.numFrames > 1;
     if (!pages) {
@@ -407,6 +420,7 @@ class ResizeEngine {
           name: name,
           onProgress: onProgress,
           cancellation: cancellation,
+          faces: faces,
         ),
       ];
     }
@@ -423,6 +437,7 @@ class ResizeEngine {
           name: name,
           pageIndex: p,
           pageCount: decoded.numFrames,
+          faces: faces,
           onProgress: (v) => tick(0.10 + 0.90 * (p + v) / decoded.numFrames),
           cancellation: cancellation,
         ),
@@ -476,6 +491,7 @@ class ResizeEngine {
     int? pageCount,
     void Function(double)? onProgress,
     CancellationToken? cancellation,
+    List<({double x, double y})> faces = const [],
   }) async {
     void tick(double v) => onProgress?.call(v.clamp(0.0, 1.0));
 
@@ -496,7 +512,7 @@ class ResizeEngine {
 
     // Geometry comes from frame 0 once, so every frame lands on identical
     // dimensions instead of drifting with each frame's own aspect ratio.
-    final geometry = _geometryFor(s.spec, inputs.first);
+    final geometry = _geometryFor(s.spec, inputs.first, faces);
 
     final total = inputs.length;
     final produced = <img.Image>[];
@@ -582,7 +598,11 @@ class ResizeEngine {
   /// Crop and pad are expressed against frame 0's pixel grid and the resampling
   /// method is chosen from the post-crop dimensions, which is what the
   /// single-frame path did.
-  static _FrameGeometry _geometryFor(ResizeSpec spec, img.Image source) {
+  static _FrameGeometry _geometryFor(
+    ResizeSpec spec,
+    img.Image source,
+    List<({double x, double y})> faces,
+  ) {
     // exactFit scales to sit inside the box and then pads out to it, so it needs
     // two sizes: the scaled inner rect and the outer canvas.
     final outer = computeTargetSize(spec, source.width, source.height);
@@ -600,7 +620,12 @@ class ResizeEngine {
     var srcW = source.width;
     var srcH = source.height;
     if (spec.mode == ResizeMode.exactCrop) {
-      final plan = computeCropPlan(srcW, srcH, target);
+      // Face awareness is opt-in and off by default. When it is off, or the
+      // detector is unavailable, or nothing was found, [faces] is empty and
+      // this is the exact centre crop that has always been produced. A false
+      // positive moves the crop away from the subject, which is worse than a
+      // plain centre crop, so there is no fallback that guesses.
+      final plan = computeCropPlan(srcW, srcH, target, faces: faces);
       if (plan != CropPlan.none) {
         crop = plan;
         srcW = plan.cropW;

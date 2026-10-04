@@ -224,15 +224,41 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
+          # libpulse0 is the one that matters: without it the emulator binary
+          # dies at startup. The rest are qemu's other hard links, installed in
+          # the same step because discovering them one failed run at a time
+          # costs ten minutes each.
           sudo apt-get install -y --no-install-recommends \
             libpulse0 libgl1 libx11-6 libxcb1 libxkbcommon0 libnss3 \
             libfontconfig1 libfreetype6
           ldconfig
+          # Prove the library the emulator actually dlopens is now resolvable,
+          # so the next failure is not this one again.
+          ldconfig -p | grep -q libpulse.so.0
+          echo "libpulse resolved"
 
       # The runner image does not put adb on PATH, and the emulator action's first
       # adb call then fails with "unable to connect to adb daemon on port 5037".
       # The SDK path is resolved explicitly and added to the job, and adb is
       # started here, after KVM is set up and before the emulator boots.
+      # The emulator has to exist before the install step can matter, and the
+      # action logs its own failure. Running a probe here means the log states
+      # which shared object is missing, instead of the run dying with exit 1
+      # and a single line of qemu output.
+      - name: Verify the emulator can start
+        run: |
+          set -uo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          EMU="$SDK/emulator/emulator"
+          if [ ! -x "$EMU" ]; then
+            echo "::error::no emulator binary at $EMU"
+            exit 1
+          fi
+          echo "$EMU -version:"
+          "$EMU" -version 2>&1 | head -5 || true
+          echo "--- unresolved shared objects ---"
+          ldd "$EMU" 2>/dev/null | grep "not found" || echo "(none)"
+
       - name: Prepare adb
         run: |
           set -euo pipefail

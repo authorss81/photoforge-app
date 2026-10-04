@@ -189,7 +189,24 @@ TargetSize _guardUpscale(ResizeSpec spec, int srcW, int srcH, TargetSize t) {
 }
 
 /// Source-pixel crop needed to fill [target] at the source aspect ratio.
-CropPlan computeCropPlan(int srcW, int srcH, TargetSize target) {
+///
+/// [focal] biases the window towards a point of interest, such as a detected
+/// face, instead of the geometric centre. It is in source pixels and is
+/// clamped so a box never runs off the edge. Passing null gives the exact
+/// centre crop this function has always produced, byte for byte, which is what
+/// keeps the default path provably unchanged.
+///
+/// With several [faces] the window is chosen to contain as many of them as
+/// possible, and ties are broken towards the centre. A single face off to one
+/// side therefore pulls the crop that way, while a group is kept together
+/// rather than the crop jumping to whichever face was detected last.
+CropPlan computeCropPlan(
+  int srcW,
+  int srcH,
+  TargetSize target, {
+  ({double x, double y})? focal,
+  List<({double x, double y})> faces = const [],
+}) {
   if (srcW <= 0 || srcH <= 0) return CropPlan.none;
   if (target.width <= 0 || target.height <= 0) return CropPlan.none;
 
@@ -208,10 +225,101 @@ CropPlan computeCropPlan(int srcW, int srcH, TargetSize target) {
 
   if (w >= srcW && h >= srcH) return CropPlan.none;
 
-  final x = (srcW - w) ~/ 2;
-  final y = (srcH - h) ~/ 2;
+  final x = _focalX(srcW, w, focal, faces);
+  final y = _focalY(srcH, h, focal, faces);
   return CropPlan(cropX: x, cropY: y, cropW: w, cropH: h);
 }
+
+/// Chooses the horizontal offset for a crop window [w] wide in a [srcW] source.
+int _focalX(
+  int srcW,
+  int w,
+  ({double x, double y})? focal,
+  List<({double x, double y})> faces,
+) {
+  final span = srcW - w;
+  // No horizontal movement is possible.
+  if (span <= 0) return 0;
+
+  final points = faces.isNotEmpty
+      ? faces
+      : (focal == null ? const [] : [focal]);
+  if (points.isEmpty) return span ~/ 2;
+
+  // A single point of interest: centre the window on it.
+  if (points.length == 1) {
+    final p = points.first;
+    return _clampOffset((p.x.round() - w ~/ 2), span);
+  }
+
+  // Several: prefer the window that contains the most of them. Among the
+  // windows that tie, take the one closest to the source centre, so the result
+  // is stable rather than dependent on detection order.
+  final xs = <int>[for (final p in points) p.x.round()]..sort();
+  final lo = xs.first;
+  final hi = xs.last;
+  if (hi - lo <= w) {
+    // They all fit together, so centre on their midpoint.
+    return _clampOffset(((lo + hi) ~/ 2) - w ~/ 2, span);
+  }
+  // Too wide to contain; aim at the largest group of consecutive faces the
+  // window can hold.
+  return _bestWindowFor(xs, w, span);
+}
+
+/// Largest run of consecutive [xs] that fits in [w], then centred.
+int _bestWindowFor(List<int> xs, int w, int span) {
+  // Cannot happen: callers pass at least two points. Guarded anyway, because a
+  // window offset of zero would silently mean "left edge", which is a different
+  // answer from "no faces at all".
+  if (xs.isEmpty) return span ~/ 2;
+  var bestCount = 0;
+  var bestCentre = 0;
+  for (var i = 0; i < xs.length; i++) {
+    var j = i;
+    while (j + 1 < xs.length && xs[j + 1] - xs[i] <= w) {
+      j++;
+    }
+    final count = j - i + 1;
+    final centre = ((xs[i] + xs[j]) ~/ 2) - w ~/ 2;
+    if (count > bestCount ||
+        (count == bestCount &&
+            (centre - span ~/ 2).abs() < (bestCentre - span ~/ 2).abs())) {
+      bestCount = count;
+      bestCentre = centre;
+    }
+  }
+  return _clampOffset(bestCentre, span);
+}
+
+int _focalY(
+  int srcH,
+  int h,
+  ({double x, double y})? focal,
+  List<({double x, double y})> faces,
+) {
+  final span = srcH - h;
+  if (span <= 0) return 0;
+
+  final points = faces.isNotEmpty
+      ? faces
+      : (focal == null ? const [] : [focal]);
+  if (points.isEmpty) return span ~/ 2;
+
+  if (points.length == 1) {
+    // Faces sit in the upper half of a portrait far more often than not, so the
+    // vertical axis is biased towards the subject rather than centred on it.
+    // Without this a portrait cropped to 1:1 keeps the shoulders.
+    final p = points.first;
+    final ideal = (p.y.round() - h ~/ 2);
+    return _clampOffset((ideal * 3) ~/ 4 + span ~/ 4, span);
+  }
+
+  final ys = points.map((p) => p.y.round()).toList()..sort();
+  return _clampOffset(((ys.first + ys.last) ~/ 2) - h ~/ 2, span);
+}
+
+int _clampOffset(int v, int span) => v < 0 ? 0 : (v > span ? span : v);
 
 /// Resampling method for a given downscale factor.
 enum Resample { fast, balanced, high }

@@ -385,6 +385,22 @@ class ResizeSettings extends ChangeNotifier {
     allowUpscale: _allowUpscale,
   );
 
+  // ------------------------------------------------------------ face awareness
+
+  /// Centre a crop on detected faces instead of on the geometric centre.
+  ///
+  /// Off by default, and only ever consulted for exactCrop. A false positive
+  /// moves the crop away from the subject, which is worse than a plain centre
+  /// crop, so the feature has to be asked for and never guessed at.
+  bool get faceAwareCrop => _faceAwareCrop;
+  bool _faceAwareCrop = false;
+
+  void setFaceAwareCrop(bool v) {
+    if (v == _faceAwareCrop) return;
+    _faceAwareCrop = v;
+    notifyListeners();
+  }
+
   bool get qualityIsAutomatic => _targetKb != null;
 
   // ---------------------------------------------------------------- setters
@@ -749,6 +765,7 @@ class ResizeSettings extends ChangeNotifier {
     'ow': _overwrite,
     'keepext': _keepExtensionWhenKeepFormat,
     'writeNow': _writeImmediately,
+    'faces': _faceAwareCrop,
     'memMb': _memoryBudgetMb,
     'extras': [for (final e in _extraOutputs) e.toJson()],
   };
@@ -802,6 +819,7 @@ class ResizeSettings extends ChangeNotifier {
     _nameTemplate = (j['tmpl'] as String?) ?? _nameTemplate;
     _outputDirectory = (j['outdir'] as String?) ?? _outputDirectory;
     _overwrite = (j['ow'] as bool?) ?? _overwrite;
+    _faceAwareCrop = (j['faces'] as bool?) ?? _faceAwareCrop;
     _keepExtensionWhenKeepFormat =
         (j['keepext'] as bool?) ?? _keepExtensionWhenKeepFormat;
     _writeImmediately = (j['writeNow'] as bool?) ?? _writeImmediately;
