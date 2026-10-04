@@ -59,15 +59,15 @@ jobs:
 
       - run: flutter pub get
 
-      - name: Check goldens are present
-        # Goldens are gitignored and generated on demand, so a tree can
-        # legitimately have no goldens yet. Fail loudly with instructions
-        # rather than passing silently or failing with a confusing
-        # "golden file not found" from inside the test runner.
+      - name: Check goldens are committed
+        # Goldens are committed on purpose: CI must fail on a diff rather than
+        # regenerate, which is the entire value of the job. This check exists
+        # only to turn a confusing "golden file not found" from inside the test
+        # runner into an actionable message.
         run: |
           set -euo pipefail
           if [ -z "$(find test_golden/goldens -name '*.png' 2>/dev/null)" ]; then
-            echo "::error::No golden images found."
+            echo "::error::No golden images committed."
             echo "Run the golden-generate workflow, inspect every image, then"
             echo "commit the result to test_golden/goldens/."
             exit 1
@@ -75,7 +75,10 @@ jobs:
           ls -la test_golden/goldens/
 
       - name: Verify goldens
-        run: flutter test test_golden/
+        # matchesGoldenFile already names the failing file and writes the actual
+        # image next to the expected one, which is what makes the diff
+        # actionable. No --update-goldens here, ever.
+        run: flutter test test_golden/ --reporter expanded
 
   android:
     name: android
