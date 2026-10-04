@@ -180,6 +180,10 @@ class ResizeEngine {
   /// every platform.
   static const bool supportsScaledDecode = false;
 
+  /// Full decodes performed. Test observability for the multi-output work:
+  /// one decode must feed any number of presets.
+  static int decodeCount = 0;
+
   /// The most channels any working image carried during the last [run].
   /// Test observability for the phase-06 memory work, nothing more.
   static int lastWorkingChannels = 0;
@@ -214,6 +218,7 @@ class ResizeEngine {
         'Convert it to sRGB first${name == null ? '' : ' ($name)'}.',
       );
     }
+    decodeCount++;
     img.Image? decoded;
     try {
       decoded = img.decodeNamedImage(name ?? '', bytes);
@@ -268,6 +273,26 @@ class ResizeEngine {
       name == null ? null : extensionOfName(name),
     );
 
+    return _renderAll(
+      decoded,
+      s,
+      outFormat,
+      name: name,
+      onProgress: onProgress,
+    );
+  }
+
+  /// Shared render path: one result normally, one per page for multi-page
+  /// documents. Used by both [runAll] and [runMulti] so the two agree.
+  static Future<List<EngineResult>> _renderAll(
+    img.Image decoded,
+    ResizeSettings s,
+    OutputFormat outFormat, {
+    String? name,
+    void Function(double)? onProgress,
+  }) async {
+    void tick(double v) => onProgress?.call(v.clamp(0.0, 1.0));
+
     final pages =
         decoded.frameType == img.FrameType.page && decoded.numFrames > 1;
     if (!pages) {
@@ -298,6 +323,40 @@ class ResizeEngine {
       );
     }
     return results;
+  }
+
+/// One decode feeding any number of presets. Each preset renders from a clone,
+  /// so per-preset transforms cannot leak into each other, and each preset
+  /// solves its own quality against its own byte budget. Returns one list of
+  /// results per preset, in preset order.
+  static Future<List<List<EngineResult>>> runMulti(
+    Uint8List source,
+    List<ResizeSettings> presets, {
+    String? name,
+    void Function(double)? onProgress,
+  }) async {
+    if (presets.isEmpty) return const [];
+    final decoded = _decodeOrThrow(source, name);
+    final out = <List<EngineResult>>[];
+    for (var i = 0; i < presets.length; i++) {
+      final s = presets[i];
+      final outFormat = _resolveFormat(
+        s.format,
+        s.keepExtensionWhenKeepFormat,
+        name == null ? null : extensionOfName(name),
+      );
+      final results = await _renderAll(
+        decoded.clone(),
+        s,
+        outFormat,
+        name: name,
+        onProgress: onProgress == null
+            ? null
+            : (v) => onProgress((i + v) / presets.length),
+      );
+      out.add(results);
+    }
+    return out;
   }
 
   static Future<EngineResult> _runDecoded(

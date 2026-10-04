@@ -663,6 +663,66 @@ void main() {
     });
   });
 
+  group('multi-output', () {
+    ResizeSettings _preset(OutputFormat f, int w, {int? kb}) {
+      final s = ResizeSettings()
+        ..setMode(ResizeMode.width)
+        ..setWidth(w)
+        ..setFormat(f);
+      if (kb != null) s.setTargetKb(kb);
+      return s;
+    }
+
+    test('three presets share exactly one decode', () async {
+      final src = _makeJpeg(1200, 800);
+      final before = ResizeEngine.decodeCount;
+      final out = await ResizeEngine.runMulti(
+        src,
+        [
+          _preset(OutputFormat.jpeg, 400),
+          _preset(OutputFormat.png, 300),
+          _preset(OutputFormat.webp, 200),
+        ],
+        name: 'm.jpg',
+      );
+      expect(ResizeEngine.decodeCount - before, 1);
+      expect(out, hasLength(3));
+      expect(out[0].first.width, 400);
+      expect(out[0].first.extension, 'jpg');
+      expect(out[1].first.width, 300);
+      expect(out[1].first.extension, 'png');
+      expect(out[2].first.width, 200);
+      expect(out[2].first.extension, 'webp');
+    });
+
+    test('each preset solves its own byte budget', () async {
+      final src = _makeJpeg(1600, 1000);
+      final out = await ResizeEngine.runMulti(
+        src,
+        [
+          _preset(OutputFormat.jpeg, 800, kb: 40),
+          _preset(OutputFormat.jpeg, 400, kb: 12),
+        ],
+        name: 'm.jpg',
+      );
+      expect(out, hasLength(2));
+      expect(out[0].first.bytes.length, lessThanOrEqualTo(40 * 1024));
+      expect(out[1].first.bytes.length, lessThanOrEqualTo(12 * 1024));
+      expect(
+        out[1].first.bytes.length,
+        lessThan(out[0].first.bytes.length),
+        reason: 'the 12 KB thumbnail must come out smaller than the 40 KB hero',
+      );
+    });
+
+    test('an empty preset list returns nothing without decoding', () async {
+      final before = ResizeEngine.decodeCount;
+      final out = await ResizeEngine.runMulti(_makeJpeg(100, 80), [], name: 'm.jpg');
+      expect(out, isEmpty);
+      expect(ResizeEngine.decodeCount - before, 0);
+    });
+  });
+
   group('isolates', () {
     ResizeSettings sizedSettings() {
       final s = ResizeSettings()
