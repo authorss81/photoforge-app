@@ -27,6 +27,45 @@ class ResizePreset {
   /// If set, quality is auto-solved to land under this size.
   final int? targetKb;
   final String note;
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'group': group,
+        'mode': mode.name,
+        'width': width,
+        'height': height,
+        'format': format,
+        'quality': quality,
+        'targetKb': targetKb,
+        'note': note,
+      };
+
+  static ResizePreset? fromJson(Map<String, dynamic>? j) {
+    if (j == null) return null;
+    final name = j['name'] as String?;
+    if (name == null || name.isEmpty) return null;
+    var mode = ResizeMode.longestSide;
+    final modeName = j['mode'] as String?;
+    if (modeName != null) {
+      for (final m in ResizeMode.values) {
+        if (m.name == modeName) {
+          mode = m;
+          break;
+        }
+      }
+    }
+    return ResizePreset(
+      name: name,
+      group: (j['group'] as String?) ?? 'Custom',
+      mode: mode,
+      width: (j['width'] as num?)?.toInt(),
+      height: (j['height'] as num?)?.toInt(),
+      format: j['format'] as String?,
+      quality: (j['quality'] as num?)?.toInt(),
+      targetKb: (j['targetKb'] as num?)?.toInt(),
+      note: (j['note'] as String?) ?? '',
+    );
+  }
 }
 
 class PresetGroup {

@@ -44,6 +44,8 @@ class SettingsView extends StatelessWidget {
             const SectionLabel('Output'),
             _naming(context, s),
             _destination(context, s),
+            const SectionLabel('Extra outputs'),
+            _extraOutputs(context, s),
           ],
         );
       },
@@ -775,6 +777,84 @@ class SettingsView extends StatelessWidget {
               ),
           ],
         ),
+      ],
+    );
+  }
+
+  Widget _extraOutputs(BuildContext context, ResizeSettings s) {
+    final extras = s.extraOutputs;
+    final available = Presets.all
+        .where((p) => !extras.any((e) => e.name == p.name))
+        .toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Each file is exported once per output below, plus the main '
+          'settings above, from a single decode.',
+          style: TextStyle(
+            fontSize: 11,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 8),
+        for (final e in extras)
+          Card(
+            margin: const EdgeInsets.only(bottom: 6),
+            child: ListTile(
+              dense: true,
+              title: Text(e.name, style: const TextStyle(fontSize: 13)),
+              subtitle: Text(
+                [
+                  if (e.width != null && e.height != null)
+                    '${e.width}x${e.height}',
+                  if (e.format != null) e.format!.toUpperCase(),
+                  if (e.targetKb != null) '≤${e.targetKb} KB',
+                ].join('  ·  '),
+                style: const TextStyle(fontSize: 11),
+              ),
+              trailing: IconButton(
+                tooltip: 'Remove ${e.name}',
+                icon: const Icon(Icons.close, size: 17),
+                onPressed: () => s.removeExtraOutput(e.name),
+              ),
+            ),
+          ),
+        if (available.isNotEmpty)
+          DropdownButtonFormField<String>(
+            isExpanded: true,
+            decoration: const InputDecoration(
+              labelText: 'Add an output',
+              prefixIcon: Icon(Icons.add, size: 19),
+            ),
+            items: [
+              for (final p in available)
+                DropdownMenuItem(value: p.name, child: Text(p.name)),
+            ],
+            onChanged: (v) {
+              if (v == null) return;
+              final p = Presets.byName(v);
+              if (p != null) s.addExtraOutput(p);
+            },
+          )
+        else
+          Text(
+            extras.isEmpty
+                ? 'Add presets to export alongside the main output.'
+                : 'Every preset is already an output.',
+            style: TextStyle(
+              fontSize: 11,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        if (extras.isNotEmpty)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: s.clearExtraOutputs,
+              child: const Text('Clear all'),
+            ),
+          ),
       ],
     );
   }

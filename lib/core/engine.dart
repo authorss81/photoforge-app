@@ -405,6 +405,7 @@ class ResizeEngine {
         onProgress: onProgress == null
             ? null
             : (v) => onProgress((i + v) / presets.length),
+        cancellation: cancellation,
       );
       out.add(results);
     }

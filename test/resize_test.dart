@@ -8,6 +8,7 @@ import 'package:pixelforge/core/controller.dart';
 import 'package:pixelforge/core/engine.dart';
 import 'package:pixelforge/core/job.dart';
 import 'package:pixelforge/core/native_decoder.dart';
+import 'package:pixelforge/core/presets.dart';
 import 'package:pixelforge/core/system_picker.dart';
 import 'package:pixelforge/core/native/libheif.dart';
 import 'package:pixelforge/core/tiff16.dart';
@@ -780,6 +781,19 @@ void main() {
       return s;
     }
 
+    test('presets round-trip through JSON', () {
+      final p = Presets.byName('Web / Thumbnail')!;
+      final back = ResizePreset.fromJson(p.toJson())!;
+      expect(back.name, p.name);
+      expect(back.mode, p.mode);
+      expect(back.width, p.width);
+      expect(back.height, p.height);
+      expect(back.format, p.format);
+      expect(back.quality, p.quality);
+      expect(ResizePreset.fromJson(null), isNull);
+      expect(ResizePreset.fromJson({'nope': 1}), isNull);
+    });
+
     test('three presets share exactly one decode', () async {
       final src = _makeJpeg(1200, 800);
       final before = ResizeEngine.decodeCount;
@@ -824,6 +838,35 @@ void main() {
       expect(out, isEmpty);
       expect(ResizeEngine.decodeCount - before, 0);
     });
+
+    test('extra outputs become named siblings with distinct files', () async {
+      final c = ResizeController();
+      c.settings
+        ..setMode(ResizeMode.width)
+        ..setWidth(200)
+        ..setFormat(OutputFormat.jpeg)
+        ..setNameTemplate('{name}_{preset}_{w}x{h}');
+      c.settings.addExtraOutput(Presets.byName('Web / Thumbnail')!);
+      c.addDroppedFiles([
+        (name: 'photo.jpg', bytes: _makeJpeg(600, 400), path: null),
+      ]);
+      await c.runBatch();
+      try {
+        // Main output plus one preset sibling.
+        expect(c.jobs.length, 2);
+        expect(c.jobs[0].status, JobStatus.done);
+        expect(c.jobs[1].status, JobStatus.done);
+        expect(c.jobs[1].presetName, 'Web / Thumbnail');
+        expect(c.jobs[0].name, isNot(equals(c.jobs[1].name)));
+
+        final n0 = await c.resolveOutputName(c.jobs[0], 1);
+        final n1 = await c.resolveOutputName(c.jobs[1], 2);
+        expect(n0, isNot(equals(n1)), reason: 'sibling files must not collide');
+        expect(n1, contains('Thumbnail'));
+      } finally {
+        c.dispose();
+      }
+    }, timeout: const Timeout(Duration(minutes: 2)));
   });
 
   group('isolates', () {

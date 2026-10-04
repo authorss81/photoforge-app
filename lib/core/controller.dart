@@ -163,10 +163,15 @@ class ResizeController extends ChangeNotifier {
     return '${fileName.substring(0, dot)}_p$page${fileName.substring(dot)}';
   }
 
-  Future<String> resolveOutputName(ImageJob job, int index) async {
+  Future<String> resolveOutputName(
+    ImageJob job,
+    int index, {
+    String? presetName,
+    String? extension,
+  }) async {
     final bytes = job.output;
     final ext = ResizeEngine.extensionOfName(job.name) ?? 'jpg';
-    final outExt = _outputExtension(ext);
+    final outExt = extension ?? _outputExtension(ext);
     var base = renderTemplate(
       settings.nameTemplate,
       baseName: baseNameOf(job.name),
@@ -176,7 +181,7 @@ class ResizeController extends ChangeNotifier {
       srcHeight: job.sourceHeight ?? 0,
       extension: outExt,
       index: index,
-      presetName: settings.presetName,
+      presetName: presetName ?? job.presetName ?? settings.presetName,
     );
 
     if (settings.overwrite) return '$base.$outExt';
@@ -301,11 +306,23 @@ class ResizeController extends ChangeNotifier {
             )
             .toList();
         final regular = chunk.where((j) => !native.contains(j)).toList();
+        // Multi-output shares one decode across presets, so it runs on the
+        // main isolate even when a pool exists. Splitting presets across
+        // workers would re-decode per preset and defeat the purpose.
+        final multi = runSettings.extraOutputs.isNotEmpty;
         for (var i = 0; i < native.length; i++) {
-          await _runOne(native[i], runSettings, _cancelToken);
+          if (multi) {
+            await _runMultiJob(native[i], runSettings, _cancelToken);
+          } else {
+            await _runOne(native[i], runSettings, _cancelToken);
+          }
         }
         if (regular.isNotEmpty) {
-          if (WorkerPool.isSupported) {
+          if (multi) {
+            for (var i = 0; i < regular.length; i++) {
+              await _runMultiJob(regular[i], runSettings, _cancelToken);
+            }
+          } else if (WorkerPool.isSupported) {
             _pool ??= await WorkerPool.create();
             await _runPooled(regular, runSettings, _cancelToken);
           } else {
@@ -377,6 +394,89 @@ class ResizeController extends ChangeNotifier {
     );
     _adoptExtraPages(job, results);
     _changed();
+  }
+
+  /// One job through every configured output on the calling isolate.
+  /// Multi-output bypasses the worker pool: the win is one shared decode,
+  /// and splitting presets across workers would re-decode per preset.
+  Future<void> _runMultiJob(
+    ImageJob job,
+    ResizeSettings runSettings, [
+    CancellationToken? cancellation,
+  ]) async {
+    job.markRunning(0.0);
+    _changed();
+    final presets = <ResizeSettings>[runSettings];
+    final names = <String?>[runSettings.presetName];
+    for (final p in runSettings.extraOutputs) {
+      final ps = ResizeSettings()..loadFrom(runSettings.toJson());
+      ps.applyPreset(p);
+      presets.add(ps);
+      names.add(p.name);
+    }
+    try {
+      final all = await ResizeEngine.runMulti(
+        job.bytes,
+        presets,
+        name: job.name,
+        onProgress: job.markRunning,
+      );
+      for (var i = 0; i < all.length; i++) {
+        final results = all[i];
+        final presetName = names[i];
+        for (var k = 0; k < results.length; k++) {
+          final r = results[k];
+          if (i == 0 && k == 0) {
+            job.markDone(
+              output: r.bytes,
+              width: r.width,
+              height: r.height,
+              quality: r.quality,
+              frames: r.frames,
+              notice: r.notice,
+            );
+          } else {
+            final sibling = ImageJob(
+              id: '${job.id}-o${i}p$k',
+              name: _presetSiblingName(job.name, presetName, i, k),
+              bytes: job.bytes,
+              path: job.path,
+              presetName: presetName,
+            );
+            sibling.markDone(
+              output: r.bytes,
+              width: r.width,
+              height: r.height,
+              quality: r.quality,
+              frames: r.frames,
+              notice: r.notice,
+            );
+            final at = _jobs.indexOf(job);
+            _jobs.insert(at < 0 ? _jobs.length : at + 1, sibling);
+          }
+        }
+      }
+    } on JobCancelled {
+      job.markSkipped('Cancelled.');
+    } on EngineError catch (e) {
+      job.markFailed(e.message);
+    } catch (e) {
+      job.markFailed('Unexpected error: $e');
+    }
+    _changed();
+  }
+
+  String _presetSiblingName(
+    String fileName,
+    String? presetName,
+    int preset,
+    int page,
+  ) {
+    final safe =
+        (presetName ?? 'output$preset').replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    final dot = fileName.lastIndexOf('.');
+    if (dot <= 0) return '${fileName}_$safe';
+    return '${fileName.substring(0, dot)}_$safe${fileName.substring(dot)}';
   }
 
   /// Up to [pool] jobs at once, each on its own worker. Progress arrives over

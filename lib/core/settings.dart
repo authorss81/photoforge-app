@@ -255,6 +255,7 @@ class ResizeSettings extends ChangeNotifier {
   bool _keepExtensionWhenKeepFormat = true;
   bool _writeImmediately = false;
   int _memoryBudgetMb = 512;
+  List<ResizePreset> _extraOutputs = const [];
 
   static const _templateTokens = <String>[
     '{name}',
@@ -313,6 +314,7 @@ class ResizeSettings extends ChangeNotifier {
   bool get writeImmediately => _writeImmediately;
   int get memoryBudgetMb => _memoryBudgetMb;
   bool get keepExtensionWhenKeepFormat => _keepExtensionWhenKeepFormat;
+  List<ResizePreset> get extraOutputs => List.unmodifiable(_extraOutputs);
 
   ResizeSpec get spec => ResizeSpec(
     mode: _mode,
@@ -594,6 +596,27 @@ class ResizeSettings extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Extra outputs exported alongside the main settings via [runMulti]. Each
+  /// is a full preset so it carries its own geometry, format and budget.
+  void addExtraOutput(ResizePreset p) {
+    if (_extraOutputs.any((e) => e.name == p.name)) return;
+    _extraOutputs = [..._extraOutputs, p];
+    notifyListeners();
+  }
+
+  void removeExtraOutput(String name) {
+    final next = _extraOutputs.where((e) => e.name != name).toList();
+    if (next.length == _extraOutputs.length) return;
+    _extraOutputs = next;
+    notifyListeners();
+  }
+
+  void clearExtraOutputs() {
+    if (_extraOutputs.isEmpty) return;
+    _extraOutputs = const [];
+    notifyListeners();
+  }
+
   // ------------------------------------------------------------- presets
   void applyPreset(ResizePreset p) {
     _presetName = p.name;
@@ -664,8 +687,9 @@ class ResizeSettings extends ChangeNotifier {
     'outdir': _outputDirectory,
     'ow': _overwrite,
     'keepext': _keepExtensionWhenKeepFormat,
-    'writeNow': _writeImmediately,
-    'memMb': _memoryBudgetMb,
+'writeNow': _writeImmediately,
+        'memMb': _memoryBudgetMb,
+        'extras': [for (final e in _extraOutputs) e.toJson()],
   };
 
   void _hydrateFrom(Map<String, dynamic>? j) {
@@ -724,6 +748,17 @@ class ResizeSettings extends ChangeNotifier {
       64,
       8192,
     );
+    final extras = j['extras'];
+    if (extras is List) {
+      final parsed = <ResizePreset>[];
+      for (final e in extras) {
+        if (e is Map<String, dynamic>) {
+          final p = ResizePreset.fromJson(e);
+          if (p != null) parsed.add(p);
+        }
+      }
+      _extraOutputs = parsed;
+    }
   }
 
   static const _storeKey = 'pixelforge.settings.v1';
@@ -768,6 +803,7 @@ class ResizeSettings extends ChangeNotifier {
     _keepExtensionWhenKeepFormat = true;
     _writeImmediately = false;
     _memoryBudgetMb = 512;
+    _extraOutputs = const [];
     _aspectHint = null;
   }
 

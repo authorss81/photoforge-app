@@ -31,12 +31,17 @@ class ImageJob extends ChangeNotifier {
     required this.name,
     required Uint8List bytes,
     this.path,
+    this.presetName,
   }) : _source = bytes;
 
   final String id;
   final String name;
   Uint8List? _source;
   final String? path;
+
+  /// Which output preset produced this job, for multi-output siblings.
+  /// Feeds the {preset} filename token. Null means the main settings.
+  final String? presetName;
 
   /// The original file bytes. Null once released to bound peak memory.
   /// Check [hasSource] before touching [bytes].
