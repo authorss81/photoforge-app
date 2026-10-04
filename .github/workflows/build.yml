@@ -158,6 +158,34 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  benchmark:
+    name: benchmark
+    needs: verify
+    # Informational only. It takes tens of minutes and must never block a merge.
+    # Copy its table into benchmark/README.md when it produces new numbers.
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Run benchmark matrix
+        run: flutter test benchmark/ 2>&1 | tee benchmark-output.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pixelforge-benchmark
+          path: benchmark-output.txt
+          if-no-files-found: error
+          retention-days: 30
+
   ios:
     name: ios
     needs: verify
