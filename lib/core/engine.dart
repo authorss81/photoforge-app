@@ -250,7 +250,8 @@ class ResizeEngine {
     if (decoded == null || !decoded.isValid) {
       throw EngineError(
         'Could not decode this file — unsupported or corrupt data. HEIC, HEIF '
-        'and AVIF need the native codec build planned for v2; convert to JPEG first.',
+        'and AVIF decode natively on Android 9+ and on iOS; on desktop and web, '
+        'convert to JPEG first.',
       );
     }
     return decoded;

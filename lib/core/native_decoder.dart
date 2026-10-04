@@ -27,10 +27,18 @@ class NativeDecoder {
   static bool get isAndroid =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
+  static bool get isIOS =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+
+  /// True on any platform with a native decoder wired. Method channels do not
+  /// exist in worker isolates, so pooled callers must pre-decode on the main
+  /// isolate; see the controller partition.
+  static bool get isNativeCapable => isAndroid || isIOS;
+
   /// Full-resolution PNG bytes, or null when unavailable for any reason:
   /// wrong platform, old API level, missing plugin, undecodable file.
   static Future<Uint8List?> decodeToPng(Uint8List bytes) async {
-    if (!isAndroid) return null;
+    if (!isNativeCapable) return null;
     try {
       return await channel.invokeMethod<Uint8List>(
         'decodeImage',

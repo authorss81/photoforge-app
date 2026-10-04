@@ -880,8 +880,8 @@ void main() {
       expect(NativeDecoder.isHeifFamily(null), isFalse);
     });
 
-    test('does not touch the channel off Android', () async {
-      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    test('does not touch the channel off mobile', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
       try {
         var called = false;
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -900,8 +900,7 @@ void main() {
     });
 
     test('decodes through a mocked platform channel', () async {
-      debugDefaultTargetPlatformOverride = TargetPlatform.android;
-      final png = img.encodePng(
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;      final png = img.encodePng(
         img.Image(width: 40, height: 30, numChannels: 3),
       );
       try {
@@ -916,6 +915,32 @@ void main() {
         );
         expect(decoded.width, 40);
         expect(decoded.height, 30);
+      } finally {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(NativeDecoder.channel, null);
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
+    test('the iOS path uses the same channel contract', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      expect(NativeDecoder.isNativeCapable, isTrue);
+      final png = img.encodePng(
+        img.Image(width: 24, height: 18, numChannels: 3),
+      );
+      try {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(NativeDecoder.channel, (call) async {
+          expect(call.method, 'decodeImage');
+          expect((call.arguments as Map)['bytes'], isA<Uint8List>());
+          return png;
+        });
+        final decoded = await ResizeEngine.decodeAsync(
+          Uint8List.fromList([7, 7, 7]),
+          'photo.heic',
+        );
+        expect(decoded.width, 24);
+        expect(decoded.height, 18);
       } finally {
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(NativeDecoder.channel, null);
