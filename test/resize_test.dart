@@ -8,6 +8,7 @@ import 'package:pixelforge/core/controller.dart';
 import 'package:pixelforge/core/engine.dart';
 import 'package:pixelforge/core/job.dart';
 import 'package:pixelforge/core/native_decoder.dart';
+import 'package:pixelforge/core/native/libheif.dart';
 import 'package:pixelforge/core/tiff16.dart';
 import 'package:pixelforge/core/resize_mode.dart';
 import 'package:pixelforge/core/settings.dart';
@@ -880,6 +881,42 @@ void main() {
       expect(NativeDecoder.isHeifFamily(null), isFalse);
     });
 
+    test('libheif decodes a real HEIC when the library is present', () async {
+      final file = File('test/fixtures/gradient.heic');
+      if (!file.existsSync()) {
+        markTestSkipped('no HEIC fixture');
+        return;
+      }
+      final bytes = await file.readAsBytes();
+      if (Libheif.load() == null) {
+        // Library absent (CI Linux, macOS): the failure must name libheif.
+        expect(
+          () => Libheif.decode(bytes),
+          throwsA(isA<EngineError>().having(
+            (e) => e.message,
+            'message',
+            contains('libheif'),
+          )),
+        );
+        return;
+      }
+      final image = Libheif.decode(bytes);
+      expect(image.width, 160);
+      expect(image.height, 120);
+      // Gradient content: top-left dark, bottom-right bright.
+      final tl = image.getPixel(4, 4);
+      final br = image.getPixel(155, 115);
+      expect(tl.r + tl.g + tl.b, lessThan(br.r + br.g + br.b));
+
+      // And through the full pipeline.
+      final s = ResizeSettings()
+        ..setMode(ResizeMode.width)
+        ..setWidth(80)
+        ..setFormat(OutputFormat.jpeg);
+      final res = await ResizeEngine.run(bytes, s, name: 'gradient.heic');
+      expect(res.width, 80);
+    });
+
     test('does not touch the channel off mobile', () async {
       debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
       try {
@@ -956,14 +993,24 @@ void main() {
           throw PlatformException(code: 'DECODE', message: 'nope');
         });
         final s = ResizeSettings()..setFormat(OutputFormat.jpeg);
-        expect(
-          () => ResizeEngine.run(Uint8List.fromList([9, 9, 9]), s, name: 'photo.heic'),
-          throwsA(isA<EngineError>().having(
-            (e) => e.message,
-            'message',
-            contains('HEIC'),
-          )),
-        );
+        // Whatever the environment provides, a dead channel must end in a
+        // clear EngineError, never a crash and never silence. With libheif
+        // present the error names libheif; without it, the HEIC fallback.
+        if (Libheif.load() == null) {
+          expect(
+            () => ResizeEngine.run(Uint8List.fromList([9, 9, 9]), s, name: 'photo.heic'),
+            throwsA(isA<EngineError>().having(
+              (e) => e.message,
+              'message',
+              contains('HEIC'),
+            )),
+          );
+        } else {
+          expect(
+            () => ResizeEngine.run(Uint8List.fromList([9, 9, 9]), s, name: 'photo.heic'),
+            throwsA(isA<EngineError>()),
+          );
+        }
       } finally {
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(NativeDecoder.channel, null);

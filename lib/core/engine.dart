@@ -7,6 +7,7 @@ import 'package:image/image.dart' as img;
 import 'job.dart';
 import 'error.dart';
 import 'native_decoder.dart';
+import 'native/libheif.dart';
 import 'resize_mode.dart';
 import 'settings.dart';
 import 'tiff16.dart';
@@ -228,6 +229,11 @@ class ResizeEngine {
         } catch (_) {
           // Fall through to the standard path and its clear error.
         }
+      }
+      // Desktop ships a bundled libheif. Mobile relies on the platform
+      // decoder above; when that is absent there is nothing left to try.
+      if (Libheif.load() != null) {
+        return Libheif.decode(bytes);
       }
     }
     return _decodeOrThrow(bytes, name);

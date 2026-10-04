@@ -87,6 +87,16 @@ if(PLUGIN_BUNDLED_LIBRARIES)
     COMPONENT Runtime)
 endif()
 
+# Bundled libheif for HEIC/AVIF decoding. Installed next to the executable,
+# which is the first place the Dart loader looks. These shared libraries are
+# LGPL; see NOTICES.Z and docs/HEIC.md for attribution and replacement rights.
+file(GLOB PIXELFORGE_HEIF_DLLS "${CMAKE_CURRENT_SOURCE_DIR}/libheif/*.dll")
+if(PIXELFORGE_HEIF_DLLS)
+  install(FILES ${PIXELFORGE_HEIF_DLLS}
+    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+    COMPONENT Runtime)
+endif()
+
 # Copy the native assets provided by the build.dart from all packages.
 set(NATIVE_ASSETS_DIR "${PROJECT_BUILD_DIR}native_assets/windows/")
 install(DIRECTORY "${NATIVE_ASSETS_DIR}"
