@@ -63,7 +63,7 @@ metadata control + offline* across **mobile and desktop** in one app. That is th
 
 | Platform | Status |
 |---|---|
-| Windows | Built in CI |
+| Windows | Built in CI, and the app is launched and driven on an emulator in CI |
 | Android | Built in CI (APK + AAB) |
 | iOS | Compiled in CI (`--no-codesign`, macOS runner, main pushes only) |
 | Web | Supported |
@@ -73,10 +73,21 @@ metadata control + offline* across **mobile and desktop** in one app. That is th
 
 JPEG, PNG, WebP, GIF, TIFF, BMP, ICO, TGA, PSD, PNM, PVR, EXR.
 
-**HEIC / HEIF / AVIF are not decoded in v1.** The pure-Dart codec set does not include them
-and bundling `libheif` would mean shipping a per-platform native build, which is the thing
-this project set out to avoid. The app tells you this explicitly instead of failing silently.
-Converting to JPEG first works today. Adding native codecs is the main v2 item.
+**HEIC, HEIF and AVIF decode on Android and iOS** through the platform decoder,
+and on desktop Windows through a bundled `libheif`. Where no decoder exists the
+app says so and names the format, rather than reporting your file as damaged.
+See `docs/HEIC.md`.
+
+### Face-aware cropping
+
+The crop planner, the model and the settings toggle are in place, but **inference
+is not**: no ONNX Runtime is bundled yet, so the feature is currently a no-op and
+the app reports that honestly. `docs/FACE_MODEL.md` records why, and what remains.
+
+## Diagnostics
+
+Crashes are written to a redacted, rotating, size-capped file on your device.
+Nothing is uploaded, ever. `docs/DIAGNOSTICS.md`.
 
 ## Build it
 
@@ -86,10 +97,32 @@ flutter test
 flutter run -d windows      # or -d chrome, -d <android-device>
 ```
 
+## Tests
+
+```bash
+flutter test                   # 217 unit and widget tests, every platform
+flutter test test_golden/      # layout goldens, Linux only
+flutter test integration_test/app_test.dart   # launches the real app on a device
+```
+
+Seven CI jobs run on every push: analyze and test, goldens, Android, Windows,
+iOS, a benchmark, and a smoke test that launches the real app on an emulator and
+pushes an image through the whole pipeline. `docs/TESTING.md` records what each
+layer can and cannot catch.
+
 ## Releases
 
-Push a `v*` tag and the workflow builds a draft GitHub release with the APKs, the AAB and
-a Windows zip. Builds also run on every push to `main`; artifacts are attached to the run.
+Push a `v1.2.3` tag and the workflow builds a **draft** GitHub release with a
+universal APK, three per-architecture APKs, the Play Store bundle and a Windows
+zip, all named with the version. It verifies the built APK declares zero
+permissions and that its `versionName` matches the tag, then stops. A human
+checks the artifacts and publishes. `docs/RELEASING.md`.
+
+Check any APK's permissions yourself:
+
+```bash
+bash scripts/verify-apk-permissions.sh path/to.apk
+```
 
 ## Autonomous development loop
 
