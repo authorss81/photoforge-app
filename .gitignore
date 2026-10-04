@@ -58,3 +58,9 @@ android/key.properties
 
 # ops loop: checkpoint branches live on the remote as pf-bot/wip/<phase>
 # and are never merged into main.
+
+# Golden images. These MUST be generated on Linux, never on Windows or macOS:
+# font rasterization differs per OS, so a locally generated golden is rejected
+# by the Linux `golden` CI job. Generate them with the manual `golden-generate`
+# workflow, inspect each image, then commit the result.
+/test_golden/goldens/

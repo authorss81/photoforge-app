@@ -1,0 +1,46 @@
+name: golden-generate
+
+# Generates golden files on the exact Linux environment CI verifies against.
+# Manual dispatch only. Download the artifact, inspect every image pixel by
+# pixel, then commit what you approve to test_golden/goldens/.
+#
+# Never run --update-goldens in the verify job. A golden that updates itself
+# is not a test.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: 3.44.8
+
+jobs:
+  generate:
+    name: generate goldens
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Generate goldens
+        run: flutter test --update-goldens test_golden/
+
+      - name: List what was generated
+        run: find test_golden -name '*.png' -exec ls -la {} \;
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pixelforge-goldens
+          path: test_golden/goldens/
+          if-no-files-found: error
+          retention-days: 30

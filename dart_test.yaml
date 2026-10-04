@@ -1,0 +1,8 @@
+# Declares the tag used by test_golden/ so the runner does not warn about an
+# unknown tag.
+tags:
+  golden:
+    description: >
+      Pixel comparison tests. They live outside test/ so a plain `flutter test`
+      never runs them, and they are generated and verified on Linux only,
+      because font rasterization differs per OS.

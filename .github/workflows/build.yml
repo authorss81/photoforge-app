@@ -32,13 +32,35 @@ jobs:
         run: flutter pub get
 
       - name: Format check
-        run: dart format --output=none --set-exit-if-changed lib test
+        run: dart format --output=none --set-exit-if-changed lib test test_golden
 
       - name: Analyze
         run: flutter analyze
 
       - name: Test
         run: flutter test
+
+  golden:
+    name: golden
+    needs: verify
+    # Linux only. Goldens live in test_golden/ (not test/) so a plain
+    # `flutter test` never picks them up, and they are generated on Linux by
+    # golden-generate.yml, because font rasterization differs per OS.
+    # Verifying them anywhere else rejects files that are correct.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Verify goldens
+        run: flutter test test_golden/
 
   android:
     name: android
