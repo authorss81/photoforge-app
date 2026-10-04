@@ -372,8 +372,10 @@ class _PreviewPane extends StatefulWidget {
   State<_PreviewPane> createState() => _PreviewPaneState();
 }
 
+enum _PreviewMode { before, split, after }
+
 class _PreviewPaneState extends State<_PreviewPane> {
-  bool _showOriginal = false;
+  _PreviewMode _view = _PreviewMode.split;
   Uint8List? _liveBytes;
   String? _liveForJob;
   int _generation = 0;
@@ -418,7 +420,7 @@ class _PreviewPaneState extends State<_PreviewPane> {
   Future<void> _renderLive() async {
     final controller = widget.controller;
     final job = controller.selected;
-    if (job == null || !job.hasSource || _showOriginal) return;
+    if (job == null || !job.hasSource || _view == _PreviewMode.before) return;
     final generation = ++_generation;
     final jobId = job.id;
     final snapshot = controller.settings.toJson();
@@ -441,21 +443,21 @@ class _PreviewPaneState extends State<_PreviewPane> {
     final job = controller.selected;
     final theme = Theme.of(context);
 
-    final live = !_showOriginal &&
+    final live = _view != _PreviewMode.before &&
         job != null &&
         _liveForJob == job.id &&
         _liveBytes != null;
-    final bytes = job == null
+    final original =
+        job == null ? null : (job.hasSource ? job.bytes : job.thumbnail);
+    final processed = job == null
         ? null
-        : (_showOriginal
-              ? (job.hasSource ? job.bytes : job.thumbnail)
-              : (live
-                    ? _liveBytes
-                    : (job.output ??
-                          (job.hasSource ? job.bytes : job.thumbnail))));
+        : (live
+              ? _liveBytes
+              : (job.output ??
+                    (job.hasSource ? job.bytes : job.thumbnail)));
     final label = job == null
         ? null
-        : (_showOriginal
+        : (_view == _PreviewMode.before
               ? 'Original'
               : (live
                     ? 'Live'
@@ -474,24 +476,28 @@ class _PreviewPaneState extends State<_PreviewPane> {
                 : '${job.sourceSizeLabel}  ·  ${formatBytes(job.inputBytes)}',
             trailing: job == null
                 ? null
-                : SegmentedButton<bool>(
+                : SegmentedButton<_PreviewMode>(
                     showSelectedIcon: false,
                     style: const ButtonStyle(
                       visualDensity: VisualDensity.compact,
                     ),
                     segments: const [
                       ButtonSegment(
-                        value: true,
+                        value: _PreviewMode.before,
                         label: Text('Before', style: TextStyle(fontSize: 11)),
                       ),
                       ButtonSegment(
-                        value: false,
+                        value: _PreviewMode.split,
+                        label: Text('Split', style: TextStyle(fontSize: 11)),
+                      ),
+                      ButtonSegment(
+                        value: _PreviewMode.after,
                         label: Text('After', style: TextStyle(fontSize: 11)),
                       ),
                     ],
-                    selected: {_showOriginal},
+                    selected: {_view},
                     onSelectionChanged: (s) {
-                      setState(() => _showOriginal = s.first);
+                      setState(() => _view = s.first);
                       _scheduleLive();
                     },
                   ),
@@ -499,7 +505,12 @@ class _PreviewPaneState extends State<_PreviewPane> {
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(12),
-              child: LargePreview(bytes: bytes, label: label),
+              child: LargePreview(
+                before: original,
+                after: _view == _PreviewMode.before ? original : processed,
+                split: _view == _PreviewMode.split,
+                label: label,
+              ),
             ),
           ),
           if (job != null) _ResultBar(job: job, controller: controller),

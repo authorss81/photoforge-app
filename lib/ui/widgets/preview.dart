@@ -1,6 +1,5 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/engine.dart';
 
@@ -85,23 +84,55 @@ class _ImageThumbState extends State<ImageThumb> {
   }
 }
 
-/// A big, centred before/after preview.
-class LargePreview extends StatelessWidget {
+/// A big before/after preview with a draggable divider.
+///
+/// Both images are laid out identically (BoxFit.contain, centred), so they
+/// overlap exactly and the divider reveals one side or the other. Dragging
+/// starts only on the handle, never on the image, so pinch-zoom and pan keep
+/// working everywhere else. Keyboard users get arrow keys on the focused
+/// handle, and screen readers get the Before/Split/After toggle upstream,
+///
+/// which jumps to a full view without needing the drag at all.
+class LargePreview extends StatefulWidget {
   const LargePreview({
     super.key,
-    required this.bytes,
+    required this.before,
+    required this.after,
     this.label,
     this.icon = Icons.image_outlined,
+    this.split = true,
   });
 
-  final Uint8List? bytes;
+  final Uint8List? before;
+  final Uint8List? after;
   final String? label;
   final IconData icon;
+
+  /// False forces a single full view of [after] (or [before] when after is
+  /// missing). Used by the accessible toggle.
+  final bool split;
+
+  @override
+  State<LargePreview> createState() => _LargePreviewState();
+}
+
+class _LargePreviewState extends State<LargePreview> {
+  double _fraction = 0.5;
+  final FocusNode _handleFocus = FocusNode();
+
+  @override
+  void dispose() {
+    _handleFocus.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final data = bytes;
+    final before = widget.before;
+    final after = widget.after ?? before;
+    final showSplit = widget.split && before != null && widget.after != null;
+
     return Container(
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(
@@ -114,13 +145,13 @@ class LargePreview extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          if (data == null || data.isEmpty)
+          if (after == null || after.isEmpty)
             Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    icon,
+                    widget.icon,
                     size: 40,
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -134,12 +165,20 @@ class LargePreview extends StatelessWidget {
                 ],
               ),
             )
-          else
+          else if (!showSplit)
             InteractiveViewer(
               maxScale: 12,
-              child: Image.memory(data, fit: BoxFit.contain),
+              child: Image.memory(after, fit: BoxFit.contain),
+            )
+          else
+            _SplitView(
+              before: before,
+              after: after,
+              fraction: _fraction,
+              onFraction: (v) => setState(() => _fraction = v),
+              handleFocus: _handleFocus,
             ),
-          if (label != null)
+          if (widget.label != null)
             Positioned(
               left: 10,
               top: 10,
@@ -150,7 +189,7 @@ class LargePreview extends StatelessWidget {
                   borderRadius: BorderRadius.circular(7),
                 ),
                 child: Text(
-                  label!,
+                  widget.label!,
                   style: theme.textTheme.labelSmall?.copyWith(
                     color: theme.colorScheme.onPrimary,
                     fontWeight: FontWeight.w600,
@@ -160,6 +199,119 @@ class LargePreview extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+class _SplitView extends StatelessWidget {
+  const _SplitView({
+    required this.before,
+    required this.after,
+    required this.fraction,
+    required this.onFraction,
+    required this.handleFocus,
+  });
+
+  final Uint8List before;
+  final Uint8List after;
+  final double fraction;
+  final ValueChanged<double> onFraction;
+  final FocusNode handleFocus;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final dx = (fraction.clamp(0.02, 0.98)) * constraints.maxWidth;
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.memory(after, fit: BoxFit.contain),
+            ClipRect(
+              child: Align(
+                alignment: Alignment.centerLeft,
+                widthFactor: fraction.clamp(0.02, 0.98),
+                child: SizedBox(
+                  width: constraints.maxWidth,
+                  height: constraints.maxHeight,
+                  child: Image.memory(before, fit: BoxFit.contain),
+                ),
+              ),
+            ),
+            Positioned(
+              left: dx - 22,
+              top: 0,
+              bottom: 0,
+              width: 44,
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onHorizontalDragUpdate: (d) {
+                  onFraction(
+                    ((dx + d.delta.dx) / constraints.maxWidth).clamp(0.02, 0.98),
+                  );
+                },
+                child: Semantics(
+                  label: 'Comparison divider',
+                  hint: 'Drag to compare, or use arrow keys',
+                  child: Focus(
+                    focusNode: handleFocus,
+                    onKeyEvent: (node, event) {
+                      if (event is KeyDownEvent) {
+                        const step = 0.05;
+                        if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+                          onFraction((fraction - step).clamp(0.02, 0.98));
+                          return KeyEventResult.handled;
+                        }
+                        if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+                          onFraction((fraction + step).clamp(0.02, 0.98));
+                          return KeyEventResult.handled;
+                        }
+                      }
+                      return KeyEventResult.ignored;
+                    },
+                    child: Container(
+                      color: Colors.transparent,
+                      child: Center(
+                        child: Container(
+                          width: 3,
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.primary,
+                            borderRadius: BorderRadius.circular(2),
+                            boxShadow: [
+                              BoxShadow(
+                                color: theme.colorScheme.scrim.withValues(
+                                  alpha: 0.4,
+                                ),
+                                blurRadius: 4,
+                              ),
+                            ],
+                          ),
+                          child: Center(
+                            child: Container(
+                              width: 26,
+                              height: 26,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: theme.colorScheme.primary,
+                              ),
+                              child: Icon(
+                                Icons.compare_arrows_rounded,
+                                size: 15,
+                                color: theme.colorScheme.onPrimary,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
