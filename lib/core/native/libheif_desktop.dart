@@ -107,6 +107,9 @@ class Libheif {
   static const _chG = 4;
   static const _chB = 5;
 
+  /// libheif_error_Unsupported_feature.
+  static const _errUnsupportedFeature = 4;
+
   static String? _cachedPath;
   static DynamicLibrary? _cachedLib;
 
@@ -273,8 +276,29 @@ class Libheif {
     final detail = err.message == nullptr
         ? ''
         : ' ${err.message.toDartString()}';
+    if (_isUnsupportedCodec(err.code, detail)) {
+      // A libheif can be present and still be unable to read HEIC: it was built
+      // without an HEVC decoder. That is a different problem from a missing
+      // library and a different problem from a corrupt file, and the user cannot
+      // fix it by re-downloading anything. Say so instead of leaking the raw
+      // code.
+      throw EngineError(
+        'The libheif on this system was built without HEVC support, so it '
+        'cannot read this HEIC. Convert to JPEG first, or install a libheif '
+        'with HEVC decoding.',
+      );
+    }
     throw EngineError(
       'libheif failed to $step the image (code ${err.code}).$detail',
     );
+  }
+
+  /// libheif error 4 is `Unsupported_feature`; the message distinguishes a
+  /// missing HEVC codec from other unsupported features. Both are checked so a
+  /// build that reports the failure slightly differently is still recognised.
+  static bool _isUnsupportedCodec(int code, String detail) {
+    if (code != _errUnsupportedFeature) return false;
+    final d = detail.toLowerCase();
+    return d.contains('codec') || d.contains('hevc');
   }
 }
