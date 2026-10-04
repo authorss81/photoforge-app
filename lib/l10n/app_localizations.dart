@@ -159,6 +159,19 @@ abstract class AppStrings {
   String get onboardingBody2;
   String get onboardingTitle3;
   String get onboardingBody3;
+
+  // Diagnostics.
+  String get diagnostics;
+  String get diagnosticsCopy;
+  String get diagnosticsCopied;
+  String get diagnosticsCopyFailed;
+  String get diagnosticsClear;
+  String get diagnosticsClearConfirm;
+  String get diagnosticsCleared;
+  String get diagnosticsRefresh;
+  String get diagnosticsEmpty;
+  String get diagnosticsPrivacy;
+  String diagnosticsSize(int bytes);
 }
 
 class EnStrings extends AppStrings {
@@ -481,6 +494,35 @@ class EnStrings extends AppStrings {
   String get onboardingBody3 =>
       'Choose a preset such as Web for sharing or Archive for keeping quality, '
       'then drop in images. You can change every setting later.';
+
+  @override
+  String get diagnostics => 'Diagnostics';
+  @override
+  String get diagnosticsCopy => 'Copy log';
+  @override
+  String get diagnosticsCopied => 'Log copied to the clipboard.';
+  @override
+  String get diagnosticsCopyFailed => 'Could not copy the log.';
+  @override
+  String get diagnosticsClear => 'Clear log';
+  @override
+  String get diagnosticsClearConfirm =>
+      'This permanently deletes the crash log from this device.';
+  @override
+  String get diagnosticsCleared => 'Crash log deleted.';
+  @override
+  String get diagnosticsRefresh => 'Refresh';
+  @override
+  String get diagnosticsEmpty => 'No crashes recorded.';
+  @override
+  String get diagnosticsPrivacy =>
+      'Crashes are stored only on this device and never uploaded. File names '
+      'and paths are removed before anything is written, so the log cannot '
+      'identify your photos.';
+  @override
+  String diagnosticsSize(int bytes) => bytes < 1024
+      ? '$bytes B on disk'
+      : '${(bytes / 1024).toStringAsFixed(1)} KB on disk';
 }
 
 class AppLocalizations {

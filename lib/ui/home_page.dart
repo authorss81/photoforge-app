@@ -12,6 +12,7 @@ import '../core/resize_mode.dart';
 import '../core/settings.dart';
 import '../core/shared_content.dart';
 import '../l10n/app_localizations.dart';
+import 'diagnostics_page.dart';
 import 'onboarding.dart';
 import 'theme.dart';
 import 'widgets/preview.dart';
@@ -63,6 +64,12 @@ class _HomePageState extends State<HomePage> {
   }
 
   void showShortcuts() => ShortcutHost.showShortcutsDialog(context);
+
+  void _openDiagnostics() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const DiagnosticsPage()));
+  }
 
   void focusSearch() {
     // There is no settings search field yet (deliberately out of scope for this
@@ -230,6 +237,13 @@ class _HomePageState extends State<HomePage> {
             onPressed: showShortcuts,
             icon: const Icon(Icons.keyboard_outlined),
           ),
+        // Always present, on every platform: a crash log the user cannot reach
+        // is not a diagnostic tool.
+        IconButton(
+          tooltip: AppLocalizations.of(context).diagnostics,
+          onPressed: _openDiagnostics,
+          icon: const Icon(Icons.bug_report_outlined),
+        ),
         const SizedBox(width: 4),
       ],
       bottom: PreferredSize(

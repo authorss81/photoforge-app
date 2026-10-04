@@ -32,7 +32,7 @@ jobs:
         run: flutter pub get
 
       - name: Format check
-        run: dart format --output=none --set-exit-if-changed lib test test_golden
+        run: dart format --output=none --set-exit-if-changed lib test test_golden integration_test
 
       - name: Analyze
         run: flutter analyze
@@ -177,6 +177,56 @@ jobs:
             build/app/outputs/bundle/release/*.aab
           if-no-files-found: error
           retention-days: 30
+
+  smoke:
+    name: smoke
+    needs: verify
+    # A build that compiles is not a build that runs. This launches the app on
+    # an emulator and drives one image through the whole pipeline, asserting the
+    # output dimensions rather than merely asserting no crash.
+    #
+    # Kept on linux-latest with the KVM group and hardware acceleration enabled,
+    # which is what makes an ARM emulator bootable in a reasonable time. Without
+    # that this job is slow enough that people disable it, and a disabled smoke
+    # test is worse than none because it still looks like coverage.
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          profile: pixel_6
+          script: |
+            cd "$GITHUB_WORKSPACE"
+            flutter pub get
+            # integration_test drives the real app on a real device; a widget
+            # test cannot, because it never launches the platform.
+            flutter test integration_test/app_test.dart \
+              --dart-define=PIXELFORGE_SMOKE=1
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: smoke-logs
+          path: |
+            integration_test_output.txt
+            build/
+          retention-days: 7
 
   windows:
     name: windows
