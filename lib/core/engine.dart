@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -244,10 +245,12 @@ class ResizeEngine {
   }
 
   static img.Image _decodeOrThrow(Uint8List bytes, String? name) {
+    final where = name == null ? '' : ' ($name)';
     if (isCmykJpeg(bytes)) {
-      throw EngineError(
-        'This JPEG uses CMYK colour, which the decoder cannot convert to RGB. '
-        'Convert it to sRGB first${name == null ? '' : ' ($name)'}.',
+      throw EngineError.unsupportedFormat(
+        'This JPEG uses CMYK colour, which cannot be converted to RGB$where. '
+        'Convert it to sRGB first.',
+        detail: name,
       );
     }
     decodeCount++;
@@ -267,13 +270,65 @@ class ResizeEngine {
       }
     }
     if (decoded == null || !decoded.isValid) {
-      throw EngineError(
-        'Could not decode this file — unsupported or corrupt data. HEIC, HEIF '
-        'and AVIF decode natively on Android 9+ and on iOS; on desktop and web, '
-        'convert to JPEG first.',
-      );
+      throw _decodeFailure(name, where);
     }
     return decoded;
+  }
+
+  /// Separates "this build has no decoder for it" from "these bytes are
+  /// broken", because the fixes are opposites: convert the file versus
+  /// re-obtain the file. One combined message tells the user to do something
+  /// that cannot work.
+  ///
+  /// Judged on the extension, not the bytes, because a truncated JPEG and a
+  /// valid JPEG are indistinguishable until a decoder has already given up.
+  static EngineError _decodeFailure(String? name, String where) {
+    final ext = name == null ? null : extensionOfName(name);
+
+    if (NativeDecoder.isHeifFamily(ext)) {
+      return EngineError.codecUnavailable(
+        'HEIC, HEIF and AVIF need a native decoder$where. Android and iOS have '
+        'one built in; on this platform no decoder is available, so the file '
+        'cannot be opened. Convert it to JPEG first.',
+        detail: name,
+      );
+    }
+
+    // Containers this build can open. Anything else is a format problem.
+    const supported = [
+      'jpg',
+      'jpeg',
+      'png',
+      'gif',
+      'bmp',
+      'tif',
+      'tiff',
+      'webp',
+      'pnm',
+      'pbm',
+      'pgm',
+      'ppm',
+      'psd',
+      'tga',
+      'exr',
+      'hdr',
+      'ico',
+    ];
+    if (ext == null || !supported.contains(ext)) {
+      return EngineError.unsupportedFormat(
+        'PixelForge cannot open ${ext == null ? 'a file with no extension' : '.$ext files'}$where. '
+        'Supported formats are JPEG, PNG, GIF, BMP, TIFF and WebP, plus HEIC, '
+        'HEIF and AVIF on Android and iOS. Convert it to PNG or JPEG first.',
+        detail: name ?? ext,
+      );
+    }
+
+    // A format we do support, so the bytes themselves are the problem.
+    return EngineError.corruptData(
+      'This file is damaged or incomplete$where, so it could not be decoded. '
+      'Re-export or re-download it, then try again.',
+      detail: name,
+    );
   }
 
   /// Full pipeline. [onProgress] receives 0..1 on a best-effort basis.
@@ -680,9 +735,10 @@ class ResizeEngine {
     for (var i = 0; i < im.numFrames; i++) {
       final f = im.frames[i];
       if (f.width > im.width || f.height > im.height) {
-        throw EngineError(
+        throw EngineError.invalidSettings(
           'Frame $i of this animation is ${f.width}x${f.height} and does not '
           'fit the ${im.width}x${im.height} canvas WebP requires.',
+          detail: 'frame $i',
         );
       }
     }
@@ -1002,7 +1058,9 @@ class ResizeEngine {
       case OutputFormat.bmp:
         return img.encodeBmp(im);
       case OutputFormat.keep:
-        throw EngineError('Unresolved output format.');
+        throw EngineError.invalidSettings(
+          'The output format was never resolved. This is a bug, not a bad file.',
+        );
     }
   }
 
@@ -1247,7 +1305,16 @@ Future<List<EngineResult>> processJob(
   } on JobCancelled {
     job.markSkipped('Cancelled.');
   } on EngineError catch (e) {
-    job.markFailed(e.message);
+    job.markFailed(e.message, kind: e.kind);
+  } on FileSystemException catch (e) {
+    // Reading or writing failed. Almost always the OS refusing access, which
+    // needs a different response from a bad file: pick another folder, or
+    // grant access, rather than re-download the image.
+    job.markFailed(
+      'PixelForge could not access the file (${e.osError?.message ?? e.message}). '
+      'Check that it still exists and that you can write to the destination folder.',
+      kind: EngineErrorKind.permissionDenied,
+    );
   } catch (e) {
     job.markFailed('Unexpected error: $e');
   }

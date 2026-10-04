@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import 'error.dart';
+
 enum JobStatus { queued, running, done, failed, skipped }
 
 /// Thrown inside the pipeline when cancellation is requested. Caught by
@@ -69,6 +71,7 @@ class ImageJob extends ChangeNotifier {
   JobStatus _status = JobStatus.queued;
   Uint8List? _output;
   String? _error;
+  EngineErrorKind? _errorKind;
   String? _notice;
   int? _sourceWidth;
   int? _sourceHeight;
@@ -81,6 +84,10 @@ class ImageJob extends ChangeNotifier {
   JobStatus get status => _status;
   Uint8List? get output => _output;
   String? get error => _error;
+
+  /// Why this job failed, so the UI can distinguish a damaged file from a
+  /// missing decoder from a refused write. Null unless the job failed.
+  EngineErrorKind? get errorKind => _errorKind;
 
   /// Non-fatal loss the user should know about, e.g. an animation flattened to
   /// one frame because the chosen container cannot hold more.
@@ -147,12 +154,17 @@ class ImageJob extends ChangeNotifier {
     _status = JobStatus.done;
     _progress = 1;
     _error = null;
+    _errorKind = null;
     _notice = notice;
     notifyListeners();
   }
 
-  void markFailed(String message) {
+  void markFailed(
+    String message, {
+    EngineErrorKind kind = EngineErrorKind.corruptData,
+  }) {
     _error = message;
+    _errorKind = kind;
     _notice = null;
     _status = JobStatus.failed;
     _progress = 1;
@@ -161,6 +173,7 @@ class ImageJob extends ChangeNotifier {
 
   void markSkipped(String reason) {
     _error = reason;
+    _errorKind = EngineErrorKind.cancelled;
     _status = JobStatus.skipped;
     _progress = 1;
     notifyListeners();
@@ -170,6 +183,7 @@ class ImageJob extends ChangeNotifier {
     _status = JobStatus.queued;
     _output = null;
     _error = null;
+    _errorKind = null;
     _notice = null;
     _progress = 0;
     _solvedQuality = null;

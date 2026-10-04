@@ -625,6 +625,140 @@ void main() {
       );
     });
 
+    // Each failure case must be distinguishable, because the fixes are
+    // opposites. A user told "convert it" about a damaged file will convert a
+    // broken file forever.
+    group('decode failures name the real cause', () {
+      final s = ResizeSettings()..setFormat(OutputFormat.jpeg);
+
+      Matcher throwsKind(EngineErrorKind kind) =>
+          throwsA(isA<EngineError>().having((e) => e.kind, 'kind', kind));
+
+      test('an unknown container is an unsupported format', () async {
+        await expectLater(
+          () => ResizeEngine.run(
+            Uint8List.fromList([0, 1, 2, 3, 4, 5, 6, 7]),
+            s,
+            name: 'holiday.xyz',
+          ),
+          throwsKind(EngineErrorKind.unsupportedFormat),
+        );
+      });
+
+      test('an unknown container names the format it refused', () async {
+        try {
+          await ResizeEngine.run(
+            Uint8List.fromList([0, 1, 2, 3]),
+            s,
+            name: 'holiday.xyz',
+          );
+          fail('expected a decode failure');
+        } on EngineError catch (e) {
+          expect(e.message, contains('.xyz'));
+          expect(e.message, contains('holiday.xyz'));
+          expect(e.message, contains('Convert'));
+        }
+      });
+
+      test('a supported container with broken bytes is corrupt data', () async {
+        // A real PNG signature followed by nothing useful.
+        final broken = Uint8List.fromList([
+          0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, //
+          0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+        ]);
+        await expectLater(
+          () => ResizeEngine.run(broken, s, name: 'truncated.png'),
+          throwsKind(EngineErrorKind.corruptData),
+        );
+      });
+
+      test(
+        'corrupt data tells the user to re-obtain the file, not convert it',
+        () async {
+          final broken = Uint8List.fromList([
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, //
+            0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+          ]);
+          try {
+            await ResizeEngine.run(broken, s, name: 'truncated.png');
+            fail('expected a decode failure');
+          } on EngineError catch (e) {
+            expect(e.message, contains('damaged'));
+            expect(
+              e.message,
+              isNot(contains('Convert')),
+              reason: 'converting a damaged file cannot help',
+            );
+          }
+        },
+      );
+
+      test('HEIC without a decoder names the missing decoder', () async {
+        // The fixture is only used for its extension here: the platform branch
+        // decides whether libheif is present, and either way the message must
+        // identify the format and the reason.
+        final heic = File('test/fixtures/gradient.heic');
+        if (!heic.existsSync()) {
+          markTestSkipped('no HEIC fixture');
+          return;
+        }
+        try {
+          await ResizeEngine.run(
+            await heic.readAsBytes(),
+            s,
+            name: 'photo.heic',
+          );
+        } on EngineError catch (e) {
+          expect(e.kind, EngineErrorKind.codecUnavailable);
+          expect(e.message, contains('HEIC'));
+          expect(e.message, contains('photo.heic'));
+        }
+      });
+
+      test(
+        'a file with no extension says so rather than blaming corruption',
+        () async {
+          try {
+            await ResizeEngine.run(
+              Uint8List.fromList([9, 9, 9, 9]),
+              s,
+              name: 'mystery',
+            );
+            fail('expected a decode failure');
+          } on EngineError catch (e) {
+            expect(e.kind, EngineErrorKind.unsupportedFormat);
+            expect(e.message, contains('no extension'));
+          }
+        },
+      );
+
+      test('the cases produce genuinely different messages', () async {
+        Future<String> messageFor(String name, Uint8List bytes) async {
+          try {
+            await ResizeEngine.run(bytes, s, name: name);
+            return '';
+          } on EngineError catch (e) {
+            return e.message;
+          }
+        }
+
+        final unknown = await messageFor(
+          'a.xyz',
+          Uint8List.fromList([1, 2, 3]),
+        );
+        final corrupt = await messageFor(
+          'a.png',
+          Uint8List.fromList([
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, //
+            0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+          ]),
+        );
+        expect(unknown, isNotEmpty);
+        expect(corrupt, isNotEmpty);
+        expect(unknown, isNot(corrupt));
+      });
+    });
+
     test('16-bit TIFF survives the pipeline at 16 bits', () async {
       final src = img.Image(
         width: 120,
