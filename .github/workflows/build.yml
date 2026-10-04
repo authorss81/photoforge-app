@@ -231,7 +231,11 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             libpulse0 libgl1 libx11-6 libxcb1 libxkbcommon0 libnss3 \
             libfontconfig1 libfreetype6
-          ldconfig
+# ldconfig writes /etc/ld.so.cache, which needs root. Run it under
+          # sudo: the bare call fails with "Can't create temporary cache file
+          # ... Permission denied" and, under set -e, that killed the step after
+          # apt had already succeeded.
+          sudo ldconfig
           # Prove the library the emulator actually dlopens is now resolvable.
           # The output is captured first rather than piped into grep -q: grep -q
           # exits on the first match, which closes the pipe and kills ldconfig
