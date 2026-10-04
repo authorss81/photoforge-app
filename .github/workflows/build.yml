@@ -216,15 +216,21 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      # The runner image ships an adb that has never been started, and the
-      # emulator action's first adb call fails with "unable to connect to adb
-      # daemon on port 5037". Starting it here, after KVM is set up and before
-      # the emulator boots, avoids the collision. ANDROID_SDK_ROOT is set
-      # explicitly because the action resolves the SDK through it.
+      # The runner image does not put adb on PATH, and the emulator action's first
+      # adb call then fails with "unable to connect to adb daemon on port 5037".
+      # The SDK path is resolved explicitly and added to the job, and adb is
+      # started here, after KVM is set up and before the emulator boots.
       - name: Prepare adb
-        env:
-          ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
         run: |
+          set -euo pipefail
+          # adb is not on PATH on this image. It lives in the SDK's
+          # platform-tools, which is also where the emulator action looks, so
+          # the path is added to the job rather than assumed.
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "SDK=$SDK"
+          export PATH="$SDK/platform-tools:$SDK/emulator:$PATH"
+          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
+          which adb
           adb kill-server || true
           adb start-server
           adb devices
