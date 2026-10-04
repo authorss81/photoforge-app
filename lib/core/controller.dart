@@ -138,6 +138,12 @@ class ResizeController extends ChangeNotifier {
     return fileName.substring(0, dot);
   }
 
+  String _siblingName(String fileName, int page) {
+    final dot = fileName.lastIndexOf('.');
+    if (dot <= 0) return '${fileName}_p$page';
+    return '${fileName.substring(0, dot)}_p$page${fileName.substring(dot)}';
+  }
+
   Future<String> resolveOutputName(ImageJob job, int index) async {
     final bytes = job.output;
     final ext = ResizeEngine.extensionOfName(job.name) ?? 'jpg';
@@ -206,7 +212,29 @@ class ResizeController extends ChangeNotifier {
         final job = targets[i];
         job.markRunning(0.0);
         _changed();
-        await processJob(job, runSettings);
+        final results = await processJob(job, runSettings);
+        // A multi-page document yields one result per page. The first stays
+        // on the original job; the rest become siblings so each saves under
+        // its own name.
+        for (var k = 1; k < results.length; k++) {
+          final r = results[k];
+          final sibling = ImageJob(
+            id: '${job.id}-p${k + 1}',
+            name: _siblingName(job.name, k + 1),
+            bytes: job.bytes,
+            path: job.path,
+          );
+          sibling.markDone(
+            output: r.bytes,
+            width: r.width,
+            height: r.height,
+            quality: r.quality,
+            frames: r.frames,
+            notice: r.notice,
+          );
+          final at = _jobs.indexOf(job);
+          _jobs.insert(at < 0 ? _jobs.length : at + k, sibling);
+        }
         _changed();
       }
     } finally {

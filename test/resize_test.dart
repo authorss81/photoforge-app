@@ -4,6 +4,7 @@ import 'package:flutter/material.dart' show Color;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:pixelforge/core/engine.dart';
+import 'package:pixelforge/core/tiff16.dart';
 import 'package:pixelforge/core/resize_mode.dart';
 import 'package:pixelforge/core/settings.dart';
 
@@ -487,6 +488,174 @@ void main() {
         ),
         throwsA(isA<EngineError>()),
       );
+    });
+  });
+
+  group('formats', () {
+    Uint8List sofJpeg(int components) {
+      final bytes = <int>[
+        0xFF, 0xD8, // SOI
+        0xFF, 0xC0, 0x00, 0x0B, // SOF0, length 11
+        0x08, // precision
+        0x00, 0x01, // height
+        0x00, 0x01, // width
+        components,
+        0x01, 0x11, 0x00,
+        0x02, 0x11, 0x00,
+        0x03, 0x11, 0x00,
+      ];
+      if (components == 4) bytes.addAll([0x04, 0x11, 0x00]);
+      return Uint8List.fromList(bytes);
+    }
+
+    test('detects four-component JPEGs and nothing else', () {
+      expect(ResizeEngine.isCmykJpeg(sofJpeg(4)), isTrue);
+      expect(ResizeEngine.isCmykJpeg(sofJpeg(3)), isFalse);
+      expect(ResizeEngine.isCmykJpeg(sofJpeg(1)), isFalse);
+      expect(ResizeEngine.isCmykJpeg(Uint8List.fromList([1, 2, 3, 4])), isFalse);
+      expect(ResizeEngine.isCmykJpeg(Uint8List(0)), isFalse);
+    });
+
+    test('rejects CMYK with a message naming the problem', () async {
+      final s = ResizeSettings()..setFormat(OutputFormat.jpeg);
+      expect(
+        () => ResizeEngine.run(sofJpeg(4), s, name: 'cmyk.jpg'),
+        throwsA(isA<EngineError>().having(
+          (e) => e.message,
+          'message',
+          contains('CMYK'),
+        )),
+      );
+    });
+
+    test('16-bit TIFF survives the pipeline at 16 bits', () async {
+      final src = img.Image(width: 120, height: 90, format: img.Format.uint16, numChannels: 3);
+      for (final p in src) {
+        src.setPixelRgba(p.x, p.y, p.x * 500, p.y * 600, 40000, 65535);
+      }
+      // The package encoder truncates to 8 bits on write, so the source file
+      // itself is built with our own writer. That is also the dogfood.
+      final tiff = encodeTiff16(src);
+      expect(img.decodeTiff(tiff)!.format, img.Format.uint16);
+
+      final s = ResizeSettings()
+        ..setMode(ResizeMode.width)
+        ..setWidth(60)
+        ..setFormat(OutputFormat.tiff);
+      final res = await ResizeEngine.run(tiff, s, name: 'deep.tiff');
+      final out = img.decodeTiff(res.bytes)!;
+      expect(out.format, img.Format.uint16, reason: 'precision must not be silently truncated');
+      expect(out.width, 60);
+      var peak = 0;
+      for (final p in out) {
+        if (p.r.toInt() > peak) peak = p.r.toInt();
+      }
+      expect(peak, greaterThan(255), reason: 'values above 8-bit range must survive');
+    });
+
+    test('multi-page TIFF splits into one result per page', () async {
+      // The package encoder writes exactly one IFD, so a multi-page TIFF can
+      // only be hand-rolled here. Uncompressed RGB, little-endian, one strip
+      // per page.
+      Uint8List twoPageTiff() {
+        const w = 8, h = 4, pxLen = w * h * 3;
+        final page0 = List<int>.generate(pxLen, (i) => i % 251);
+        final page1 = List<int>.generate(pxLen, (i) => (i * 2) % 251);
+        final ifdSize = 2 + 10 * 12 + 4;
+        var at = 8 + (ifdSize + 6 + pxLen) * 2 + 0;
+        // Compute offsets first: header(8) then per page [IFD, bps, pixels].
+        var cursor = 8;
+        final offs = <int>[];
+        for (var p = 0; p < 2; p++) {
+          final ifdAt = cursor;
+          final bpsAt = ifdAt + ifdSize;
+          final pxAt = bpsAt + 6;
+          offs.addAll([ifdAt, bpsAt, pxAt]);
+          cursor = pxAt + pxLen;
+        }
+        at = cursor;
+        final out = ByteData(at);
+        void u16(int o, int v) => out.setUint16(o, v, Endian.little);
+        void u32(int o, int v) => out.setUint32(o, v, Endian.little);
+        out.setUint8(0, 0x49);
+        out.setUint8(1, 0x49);
+        u16(2, 42);
+        u32(4, offs[0]);
+        for (var p = 0; p < 2; p++) {
+          final ifdAt = offs[p * 3], bpsAt = offs[p * 3 + 1], pxAt = offs[p * 3 + 2];
+          var e = ifdAt;
+          u16(e, 10);
+          e += 2;
+          void entry(int tag, int type, int count, int value) {
+            u16(e, tag);
+            u16(e + 2, type);
+            u32(e + 4, count);
+            u32(e + 8, value);
+            e += 12;
+          }
+
+          entry(256, 4, 1, w);
+          entry(257, 4, 1, h);
+          entry(258, 3, 3, bpsAt);
+          entry(259, 3, 1, 1);
+          entry(262, 3, 1, 2);
+          entry(273, 4, 1, pxAt);
+          entry(277, 3, 1, 3);
+          entry(278, 4, 1, h);
+          entry(279, 4, 1, pxLen);
+          entry(284, 3, 1, 1);
+          u32(e, p == 0 ? offs[3] : 0);
+          for (var c = 0; c < 3; c++) {
+            u16(bpsAt + 2 * c, 8);
+          }
+          final px = p == 0 ? page0 : page1;
+          out.buffer.asUint8List().setRange(pxAt, pxAt + px.length, px);
+        }
+        return out.buffer.asUint8List();
+      }
+
+      final tiff = twoPageTiff();
+      final decoded = img.decodeTiff(tiff)!;
+      expect(decoded.numFrames, 2);
+      expect(decoded.frameType, img.FrameType.page);
+
+      final s = ResizeSettings()
+        ..setMode(ResizeMode.width)
+        ..setWidth(4)
+        ..setFormat(OutputFormat.png);
+      final results = await ResizeEngine.runAll(tiff, s, name: 'doc.tiff');
+      expect(results, hasLength(2));
+      expect(results[0].width, 4);
+      expect(results[1].width, 4);
+      expect(results[0].notice, contains('Page 1 of 2'));
+      expect(results[1].notice, contains('Page 2 of 2'));
+      for (final r in results) {
+        expect(img.decodePng(r.bytes)!.width, 4);
+      }
+    });
+
+    test('an animation to TIFF is reported, not silently flattened', () async {
+      img.Image frame(int v) {
+        final im = img.Image(width: 160, height: 120, numChannels: 3);
+        img.fill(im, color: img.ColorRgba8(v, v, v, 255));
+        return im;
+      }
+
+      // The TIFF encoder writes exactly one IFD, so multi-frame output is not
+      // encodable with this package. The contract is reporting, not preserving.
+      final anim = frame(10)..addFrame(frame(200));
+      anim.frameType = img.FrameType.animation;
+      final gif = img.encodeGif(anim, singleFrame: false);
+
+      final s = ResizeSettings()
+        ..setMode(ResizeMode.width)
+        ..setWidth(80)
+        ..setFormat(OutputFormat.tiff);
+      final res = await ResizeEngine.run(gif, s, name: 'a.gif');
+      final out = img.decodeTiff(res.bytes)!;
+      expect(out.width, 80);
+      expect(res.notice, isNotNull);
+      expect(res.notice, contains('TIFF'));
     });
   });
 

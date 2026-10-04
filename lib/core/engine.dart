@@ -5,8 +5,12 @@ import 'package:flutter/material.dart' show Color;
 import 'package:image/image.dart' as img;
 
 import 'job.dart';
+import 'error.dart';
 import 'resize_mode.dart';
 import 'settings.dart';
+import 'tiff16.dart';
+
+export 'error.dart';
 
 class EngineResult {
   const EngineResult({
@@ -35,15 +39,6 @@ class EngineResult {
   /// Set when the output could not carry everything the source had. A user who
   /// loses frames without being told is worse served than one who gets told.
   final String? notice;
-}
-
-class EngineError implements Exception {
-  EngineError(this.message);
-
-  final String message;
-
-  @override
-  String toString() => message;
 }
 
 class SourceInfo {
@@ -121,6 +116,44 @@ img.Color toCodecColor(Color c) => img.ColorRgba8(
 
 /// The pure-Dart image pipeline. No network, no platform channels.
 class ResizeEngine {
+  /// True for a JPEG whose frames carry four components (CMYK or YCCK).
+  ///
+  /// Found by scanning SOF markers rather than by decoding, because the
+  /// decoder has no CMYK path and would otherwise produce wrong colours
+  /// without any error. Malformed data safely reports false; the decoder then
+  /// produces its own error downstream.
+  static bool isCmykJpeg(Uint8List bytes) {
+    if (bytes.length < 4 || bytes[0] != 0xFF || bytes[1] != 0xD8) return false;
+    var i = 2;
+    while (i + 4 <= bytes.length) {
+      if (bytes[i] != 0xFF) return false;
+      final marker = bytes[i + 1];
+      // Standalone markers carry no length.
+      if (marker == 0xD8 || marker == 0xD9 || (marker >= 0xD0 && marker <= 0xD7) || marker == 0x01) {
+        i += 2;
+        continue;
+      }
+      if (i + 4 > bytes.length) return false;
+      final length = (bytes[i + 2] << 8) | bytes[i + 3];
+      if (length < 2) return false;
+      // SOF0-SOF15 except DHT (C4), JPG (C8) and DAC (CC).
+      final isSof = marker >= 0xC0 &&
+          marker <= 0xCF &&
+          marker != 0xC4 &&
+          marker != 0xC8 &&
+          marker != 0xCC;
+      if (isSof && i + 10 <= bytes.length) {
+        final components = bytes[i + 9];
+        if (components == 4) return true;
+        if (components == 1 || components == 3) return false;
+      }
+      // SOS: entropy data follows, no more markers worth scanning.
+      if (marker == 0xDA) return false;
+      i += 2 + length;
+    }
+    return false;
+  }
+
   /// Whether the decoder can scale during the entropy decode (libjpeg 1/8, 1/4,
   /// 1/2 factors), so a 24 MP source shrunk to 400px never materialises.
   ///
@@ -161,6 +194,12 @@ class ResizeEngine {
   /// Decoders throw on malformed data rather than returning null, so every entry
   /// point funnels through here to give the UI one predictable error type.
   static img.Image _decodeOrThrow(Uint8List bytes, String? name) {
+    if (isCmykJpeg(bytes)) {
+      throw EngineError(
+        'This JPEG uses CMYK colour, which the decoder cannot convert to RGB. '
+        'Convert it to sRGB first${name == null ? '' : ' ($name)'}.',
+      );
+    }
     img.Image? decoded;
     try {
       decoded = img.decodeNamedImage(name ?? '', bytes);
@@ -183,6 +222,23 @@ class ResizeEngine {
     String? name,
     void Function(double)? onProgress,
   }) async {
+    final results = await runAll(
+      source,
+      s,
+      name: name,
+      onProgress: onProgress,
+    );
+    return results.first;
+  }
+
+  /// One result per independently shippable image. Animations stay a single
+  /// result; multi-page documents (TIFF pages) split into one result per page.
+  static Future<List<EngineResult>> runAll(
+    Uint8List source,
+    ResizeSettings s, {
+    String? name,
+    void Function(double)? onProgress,
+  }) async {
     void tick(double v) => onProgress?.call(v.clamp(0.0, 1.0));
 
     tick(0.02);
@@ -197,6 +253,49 @@ class ResizeEngine {
       s.keepExtensionWhenKeepFormat,
       name == null ? null : extensionOfName(name),
     );
+
+    final pages =
+        decoded.frameType == img.FrameType.page && decoded.numFrames > 1;
+    if (!pages) {
+      return [
+        await _runDecoded(
+          decoded,
+          s,
+          outFormat,
+          name: name,
+          onProgress: onProgress,
+        )
+      ];
+    }
+
+    final results = <EngineResult>[];
+    for (var p = 0; p < decoded.numFrames; p++) {
+      final page = _detachFrame(decoded.getFrame(p));
+      results.add(
+        await _runDecoded(
+          page,
+          s,
+          outFormat,
+          name: name,
+          pageIndex: p,
+          pageCount: decoded.numFrames,
+          onProgress: (v) => tick(0.10 + 0.90 * (p + v) / decoded.numFrames),
+        ),
+      );
+    }
+    return results;
+  }
+
+  static Future<EngineResult> _runDecoded(
+    img.Image decoded,
+    ResizeSettings s,
+    OutputFormat outFormat, {
+    String? name,
+    int? pageIndex,
+    int? pageCount,
+    void Function(double)? onProgress,
+  }) async {
+    void tick(double v) => onProgress?.call(v.clamp(0.0, 1.0));
 
     // Orientation, rotation and flips act on the whole animation, so they run
     // once over every frame at once instead of inside the per-frame transform.
@@ -232,12 +331,14 @@ class ResizeEngine {
     }
 
     final work = _assemble(produced, loopCount: oriented.loopCount);
-    final notice = _animationNotice(
-      sourceFrames: decoded.numFrames,
-      animated: animated,
-      outFormat: outFormat,
-      preserveAnimation: s.preserveAnimation,
-    );
+    final notice = pageIndex != null && pageCount != null
+        ? 'Page ${pageIndex + 1} of $pageCount.'
+        : _animationNotice(
+            sourceFrames: decoded.numFrames,
+            animated: animated,
+            outFormat: outFormat,
+            preserveAnimation: s.preserveAnimation,
+          );
 
     final budget = s.targetKb == null ? null : s.targetKb! * 1024;
     if (budget != null && outFormat.supportsQuality) {
@@ -757,7 +858,10 @@ class ResizeEngine {
       case OutputFormat.gif:
         return img.encodeGif(im, singleFrame: !animated);
       case OutputFormat.tiff:
-        return img.encodeTiff(im, singleFrame: true);
+        // The package encoder truncates everything to 8 bits through
+        // toUint8List, so 16-bit output goes through our own writer.
+        if (im.format == img.Format.uint16) return encodeTiff16(im);
+        return img.encodeTiff(im, singleFrame: !animated);
       case OutputFormat.bmp:
         return img.encodeBmp(im);
       case OutputFormat.keep:
@@ -948,15 +1052,16 @@ class ResizeEngine {
 }
 
 /// Runs one job through the engine and updates its state.
-Future<void> processJob(ImageJob job, ResizeSettings settings) async {
+Future<List<EngineResult>> processJob(ImageJob job, ResizeSettings settings) async {
   job.markRunning(0.0);
   try {
-    final res = await ResizeEngine.run(
+    final results = await ResizeEngine.runAll(
       job.bytes,
       settings,
       name: job.name,
       onProgress: job.markRunning,
     );
+    final res = results.first;
     job.markDone(
       output: res.bytes,
       width: res.width,
@@ -965,11 +1070,13 @@ Future<void> processJob(ImageJob job, ResizeSettings settings) async {
       frames: res.frames,
       notice: res.notice,
     );
+    return results;
   } on EngineError catch (e) {
     job.markFailed(e.message);
   } catch (e) {
     job.markFailed('Unexpected error: $e');
   }
+  return const <EngineResult>[];
 }
 
 /// Renders `{token}` patterns for an output filename.
