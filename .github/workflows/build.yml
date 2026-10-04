@@ -199,6 +199,16 @@ jobs:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
 
+      # Flutter must be on PATH before the emulator starts. The emulator action
+      # runs its script through /usr/bin/sh in a way that does not inherit the
+      # PATH this step adds, so the version is installed globally rather than
+      # into a directory that step alone knows about.
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
@@ -206,13 +216,36 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      # The runner image ships an adb that has never been started, and the
+      # emulator action's first adb call fails with "unable to connect to adb
+      # daemon on port 5037". Starting it here, after KVM is set up and before
+      # the emulator boots, avoids the collision. ANDROID_SDK_ROOT is set
+      # explicitly because the action resolves the SDK through it.
+      - name: Prepare adb
+        env:
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
+        run: |
+          adb kill-server || true
+          adb start-server
+          adb devices
+
       - uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
           arch: x86_64
           profile: pixel_6
+          # Interactive graphics. Without it the emulator defaults to a mode
+          # where the display never updates, and every screenshot and find.text
+          # fails against a black screen even though the app is fine.
+          # Hardware acceleration is what makes the emulator boot in a sane
+          # time, and the KVM step above is what enables it. SwiftShader is
+          # deliberately not used: it is roughly fifty times slower and would
+          # make this job unusable.
+          emulator-options: -no-snapshot-save -no-boot-anim
+          emulator-boot-timeout: 600
           script: |
             cd "$GITHUB_WORKSPACE"
+            flutter --version
             flutter pub get
             # integration_test drives the real app on a real device; a widget
             # test cannot, because it never launches the platform.
